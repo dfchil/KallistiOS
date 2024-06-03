@@ -18,6 +18,8 @@ MYCPPFLAGS=$(MYFLAGS)
 MYCFLAGS=$(MYFLAGS) -Wno-pointer-sign
 
 
+TOOLINSTALLDIR=$(KOS_BASE)/../bin
+
 .PHONY: all clean
 
 %.o: %.c
@@ -40,4 +42,4 @@ README: readme_unformatted.txt
 all: $(TARGET) README
 
 install: all 
-	install -m 755 $(TARGET) /usr/bin
+	install -m 755 $(TARGET) $(TOOLINSTALLDIR)/

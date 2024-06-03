@@ -664,40 +664,6 @@ static inline v4i v4IntRnd(v4f v) {
 	return r;
 }
 
-static inline v3f v3Ftrv(v3f v) {
-	register float x __asm__("fr8") = v.x;
-	register float y __asm__("fr9") = v.y;
-	register float z __asm__("fr10") = v.z;
-	register float w __asm__("fr11") = 1;
-	__asm__ __volatile__(
-		"ftrv   xmtrx,fv8\n"
-		: "=f" (x), "=f" (y), "=f" (z), "=f" (w)
-		: "0" (x), "1" (y), "2" (z), "3" (w) );
-	return v3Set(x,y,z);
-}
-static inline v3f v3Ftrv0(v3f v) {
-	register float x __asm__("fr8") = v.x;
-	register float y __asm__("fr9") = v.y;
-	register float z __asm__("fr10") = v.z;
-	register float w __asm__("fr11") = 0;
-	__asm__ __volatile__(
-		"ftrv   xmtrx,fv8\n"
-		: "=f" (x), "=f" (y), "=f" (z), "=f" (w)
-		: "0" (x), "1" (y), "2" (z), "3" (w) );
-	return v3Set(x, y, z);
-}
-static inline v4f v4Ftrv(v4f v) {
-	register float x __asm__("fr8") = v.x;
-	register float y __asm__("fr9") = v.y;
-	register float z __asm__("fr10") = v.z;
-	register float w __asm__("fr11") = v.w;
-	__asm__ __volatile__(
-		"ftrv   xmtrx,fv8\n"
-		: "=f" (x), "=f" (y), "=f" (z), "=f" (w)
-		: "0" (x), "1" (y), "2" (z), "3" (w) );
-	return v4Set(x,y,z,w);
-}
-
 static inline float v2Cross(v2f l, v2f r) {
 	return l.x*r.y - l.y*r.x;
 }
