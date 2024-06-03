@@ -40,4 +40,4 @@ README: readme_unformatted.txt
 all: $(TARGET) README
 
 install: all 
-	install -m 755 vqenc /usr/bin
+	install -m 755 $(TARGET) /usr/bin
