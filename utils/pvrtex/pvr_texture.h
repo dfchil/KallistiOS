@@ -43,12 +43,12 @@ typedef enum {
 	PT_NORMAL,
 	PT_PALETTE_4B,
 	PT_PALETTE_8B,
-	
+
 	//This is not a real PVR pixel format. It's a stand in for a YUV texture that is twiddled,
 	//which is not encoded the same way as other twiddled formats.
 	//It exists so that ConvertFromFormatToBGRA8888 can know that a texture is twiddled.
 	PT_YUV_TWID = PT_YUV + 8,
-	
+
 	//Don't get this confused with ptePixelFormat
 } ptPixelFormat;
 #define PT_PIXEL_OFFSET	PT_PALETTE_8B
@@ -81,13 +81,13 @@ static inline unsigned ConvToYUV(pxlABGR8888 l, pxlABGR8888 r) {
 	//compute each pixel's Y
 	int Y0 = CLAMP(0, (int)(0.299 * l.r + 0.587 * l.g + 0.114 * l.b), 255);
 	int Y1 = CLAMP(0, (int)(0.299 * r.r + 0.587 * r.g + 0.114 * r.b), 255);
-	
+
 	int U = CLAMP(0, (int)(-0.169 * avgR - 0.331 * avgG + 0.4990 * avgB + 128), 255);
 	int V = CLAMP(0, (int)( 0.499 * avgR - 0.418 * avgG - 0.0813 * avgB + 128), 255);
 
 	unsigned yuv1 = ((uint8_t)Y0) << 8 | (uint8_t)U;
 	unsigned yuv2 = ((uint8_t)Y1) << 8 | (uint8_t)V;
-	
+
 	return (yuv1 << 16) | yuv2;
 }
 

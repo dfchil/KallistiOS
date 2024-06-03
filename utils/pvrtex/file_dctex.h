@@ -43,78 +43,78 @@ typedef enum fdtPixelFormat {
 typedef struct {
 	/*
 		All data is little endian (same as the Dreamcast's SH-4)
-		
+	
 		Header is 32 bytes large
 	*/
-	
+
 	/*
 		Four character code to identify file format.
 		Always equal to "DcTx"
 	*/
 	char fourcc[4];
-	
+
 	/*
 		Size of file, including header. This is different to IFF, which does not include the size of the fourcc and size fields.
-		
+	
 		Size is always rounded up to 32 bytes
 	*/
 	uint32_t chunk_size;
-	
+
 	/*
 		File format version of this texture.
-		
+	
 		Currently, the only version is 0
 	*/
 	uint8_t version;
-	
+
 	/*
 		Size of the header in 32-byte units, minus one. This is how far from the start of the header the texture data starts.
 		The header can be 32 bytes to 8KB large.
-		
+	
 		A header_size of 0 means the texture data starts 32 bytes after the start of the header, a size of 3 means 128 bytes...
-		
+	
 		This allows for backwards compatible changes to the size of the header, or adding additional user data.
 	*/
 	uint8_t header_size;
-	
+
 	/*
 		Values range from 0-255, mapping to 1-256. To get the real number of codebook entries or colors,
 		add one to this value. (e.g. if colors_used == 15, then there are 16 different colors, if,
 		colors_used == 2, then 2 colors are used)
-		
+	
 		The value of codebook_size is undefined if not compressed, and should not be relied upon.
 		colors_used is similarly undefined if pixel format is not 8BPP or 4BPP.
-		
+	
 		The functions fDtGetColorsUsed and fDtGetColorsUsed can be used to preform the checks and offseting.
 		They return 0 if not palletized or compressed
 	*/
 	uint8_t codebook_size, colors_used;
-	
+
 	/*
 		Height and width of the texture in pixels.
-		
+	
 		This might not match up with the sizes in pvr_size.
-		
+	
 		Stride textures will have the true width here, but the size in pvr_size
 		will be rounded up to the next power of two.
-		
+	
 		It's possible to have non-twiddled textures with a height that is not a power of two,
 		the size in pvr_size will be rounded up to the next power of two. The PVR does not
 		have a texture format that supports this, but if you don't display any texels from
 		outside the real area, it will still work.
 	*/
 	uint16_t width_pixels, height_pixels;
-	
+
 	/*
 		The bottom 6 bits match up with the third long in the PVR's triangle/quad command,
 		and the top 10 bits match up with the fourth long.
-		
+	
 		Bit 31:
 			Mipmapped (0 = no mipmaps, 1 = has mipmaps)
-			
+		
 		Bit 30:
 			VQ compression (0 = not compressed, 1 = is compressed)
-			
+		
 		Bits 29-27:
 			Pixel format
 				0: ARGB1555
@@ -124,46 +124,46 @@ typedef struct {
 				4: Spherical normal
 				5: 4-bit palette
 				6: 8-bit palette
-		
+	
 		For pixel formats other than palettized:
 			Bit 26:
 				Not twiddled (0 = twiddled, 1 = not twiddled)
-			
+		
 			Bit 25:
 				Strided (0 = width is power of two, 1 = width is not power of two)
-	
-		For palettized pixel formats:	
+
+		For palettized pixel formats:
 			Bit 26-21:
 				Palette hint (This is currently always 0, but could be used in the future)
-			
-			Palettized textures are always assumed to be twiddled and never strided by the hardware
 		
+			Palettized textures are always assumed to be twiddled and never strided by the hardware
+	
 		Bit 11:
 			Partial texture (0 = not partial, 1 = partial)
-			
+		
 			A partial texture is a texture that does not have all data to fill the PVRs view of the texture.
 			This saves video RAM, but can result in the PVR reading garbage if you try to display texels from outside
 			the defined range. The undefined data in a partial texture is always at the end of the texture, never the 
 			middle or start. (Small codebook VQ textures would techincally qualify as a type of partical texture with
 			some of the data at the start of a texture missing, they are not considered to be partial for the purposes
 			of this bit.)
-			
+		
 			For nontwiddled data, a partial texture results in the bottom rows of the texture being undefined. For
 			twiddled textures, this results in the topmost mip level having data in the right half being undefined.
-			
+		
 			For example, a 640x480 texture can at best be seen by the PVR as a 640x512 texture. Trying to display
 			data from below the 480th row will result in the PVR reading undefined data.
-			
+		
 			For a twiddled, mipmapped texture, a partial texture might be missing the bottom right corner or
 			or entire right half the highest mip level, or other shapes. This type is not currently supported by the
 			converter.
-			
+		
 		Bits 10-6:
 			Stride value. This is the width of the texture divided by 32.
 			Only valid on texture will stride bit set.
 			Place this value in the bottom 5 bits of the PVR register PVR_TEXTURE_MODULO (at address 0xA05F80E4).
 			Only one stride value can be used per frame.
-		
+	
 		Bits 5-3:
 			Texture width
 			Value    Pixels
@@ -175,10 +175,10 @@ typedef struct {
 			  5       256
 			  6       512
 			  7      1024
-			
+		
 			For stride textures, this will be set to the next size larger than the stride value.
 			For example, a 640 pixel wide texture will have a width of 7 (1024).
-			
+		
 		Bits 2-0:
 			Texture height
 			Value    Pixels
@@ -190,27 +190,27 @@ typedef struct {
 			  5       256
 			  6       512
 			  7      1024
-			
+		
 			For textures with a height that is not a power of two, the value here will be rounded up.
 			For example, a 480 pixel high texture will have a height of 6 (512).
-		
+	
 	*/
 	uint32_t pvr_type;
-	
+
 	/*
 		Pad header out to 32 bytes
-		
+	
 		DMA requires 32 byte alignment.
-		
+	
 		Padding might be used in future versions as an identifer or hash of the texture,
 		to help track identical textures, or store other user data like material properties.
 	*/
 	uint32_t pad1;
-	
+
 	uint32_t pad2;
-	
+
 	uint32_t pad3;
-	
+
 	//Texture data follows...
 } fDtHeader;
 
@@ -220,7 +220,7 @@ typedef struct {
 static inline bool fDtFourccMatches(const fDtHeader *tex) {
 	const int *fourcc = (const int *)&tex->fourcc;
 	return *fourcc == 0x78546344;	//'DxTc'
-	
+
 	/* return tex->fourcc[0] == 'D' && 
 		tex->fourcc[1] == 'c' && 
 		tex->fourcc[2] == 'T' && 
@@ -265,18 +265,18 @@ static inline void * fDtGetNextChunk(const fDtHeader *tex) {
 
 /*
 	Returns true width of texture in pixels.
-	
+
 	The value that needs to be passed to the PVR might be different than this. Use
 	fDtGetPvrWidthBits to get the value that should be given to the PVR to correctly
 	use the texture.
-	
+
 */
 static inline unsigned fDtGetWidth(const fDtHeader *tex) {
 	return tex->width_pixels;
 }
 /*
 	Returns true height of texture in pixels.
-	
+
 	The value that needs to be passed to the PVR might be different than this. Use
 	fDtGetPvrHeightBits to get the value that should be given to the PVR to correctly
 	use the texture.
@@ -302,7 +302,7 @@ static inline int fDtIsPalettized(const fDtHeader *tex) {
 
 /*
 	Returns the stride value of the texture.
-	
+
 	Result is undefined if texture is not strided.
 */
 static inline unsigned int fDtGetStride(const fDtHeader *tex) {
@@ -361,7 +361,7 @@ static inline unsigned fDtGetPvrHeightBits(const fDtHeader *tex) {
 
 /*
 	Returns how wide/high the PVR thinks the texture is in pixels.
-	
+
 	This is needed to figure out the correct U value for strided textures.
 	You can use fDtGetUWidth or fDtGetVHeight to find the correct value for
 	the edge of the texture.
@@ -375,7 +375,7 @@ static inline unsigned fDtGetPvrHeight(const fDtHeader *tex) {
 
 /*
 	Returns U value for right edge of texture.
-	
+
 	This can be used to map the entire valid area of the texture to a polygon, with
 	the top left UV coord being (0, 0), and the bottom right UV coord
 	being (fDtGetUWidth(tex), fDtGetVHeight(tex))
@@ -386,7 +386,7 @@ static inline float fDtGetUWidth(const fDtHeader *tex) {
 
 /*
 	Returns V value for bottom edge of texture
-	
+
 	See fDtGetUWidth description
 */
 static inline float fDtGetVHeight(const fDtHeader *tex) {
@@ -395,7 +395,7 @@ static inline float fDtGetVHeight(const fDtHeader *tex) {
 
 /*
 	Returns number of colors used by palettized texture.
-	
+
 	Returns 0 if texture does not use a palette.
 */
 static inline unsigned fDtGetColorsUsed(const fDtHeader *tex) {
@@ -404,7 +404,7 @@ static inline unsigned fDtGetColorsUsed(const fDtHeader *tex) {
 
 /*
 	Returns size of codebook for compressed texture in bytes.
-	
+
 	Returns 0 if texture is not compressed.
 */
 static inline unsigned fDtGetCodebookSizeBytes(const fDtHeader *tex) {
@@ -420,11 +420,11 @@ static inline void * fDtGetPvrTexData(const fDtHeader *tex) {
 
 /*
 	Preforms sanity checking on header to guess if it is valid.
-	
+
 	Checks fourcc, version, size, and texture format.
-	
+
 	Returns true if checks passes, or false if any failed.
-	
+
 	This is too large to be made static inline like the other functions in here,
 	but seperating out one function to a .c file would be a pain, so it's
 	just static. The compiler can get rid of it if it's not used.
@@ -432,17 +432,17 @@ static inline void * fDtGetPvrTexData(const fDtHeader *tex) {
 */
 static bool __attribute__((unused)) fDtValidateHeader(const fDtHeader *tex) {
 	bool valid = true;
-	
+
 	//Check fourcc matches
 	valid &= fDtFourccMatches(tex);
-	
+
 	//Currently, only version is 0. There will probably not be more than 50 versions,
 	//so anything more than that is suspicious
 	valid &= fDtGetVersion(tex) < 50;
-	
+
 	//Size should be multiple of 32
 	valid &= (fDtGetTotalSize(tex) % 32) == 0;
-	
+
 	//Check texture dimensions
 	valid &= fDtGetWidth(tex) >= 8;
 	valid &= fDtGetWidth(tex) <= 1024;
@@ -450,10 +450,10 @@ static bool __attribute__((unused)) fDtValidateHeader(const fDtHeader *tex) {
 	valid &= fDtGetHeight(tex) > 0;
 	valid &= fDtGetHeight(tex) <= 1024;
 	valid &= fDtGetPvrHeight(tex) >= fDtGetHeight(tex);
-	
+
 	//Check size is expected value
 	unsigned size = fDtGetWidth(tex)*fDtGetHeight(tex)*2;
-	
+
 	//Calculate size of texture
 	if (fDtIsMipmapped(tex))
 		size = size * 4/3 + 6;
@@ -468,14 +468,14 @@ static bool __attribute__((unused)) fDtValidateHeader(const fDtHeader *tex) {
 	//Add header size
 	size += fDtGetHeaderSize(tex);
 	valid &= fDtGetTotalSize(tex) == size;
-	
+
 	//Check valid pixel format
 	valid &= fDtGetPixelFormat(tex) <= FDT_FMT_PALETTE_8BPP;
-	
+
 	//If strided texture has height is not equal to PVR height, must be partial
 	if (fDtIsStrided(tex) && (fDtGetHeight(tex) != fDtGetPvrHeight(tex)))
 		valid &= fDtIsPartial(tex);
-	
+
 	return valid;
 }
 
@@ -483,10 +483,10 @@ static bool __attribute__((unused)) fDtValidateHeader(const fDtHeader *tex) {
 /*
 	Small codebook compressed textures require an adjustment to the texture pointer for the PVR to
 	render it correctly. This function will preform the adjustment.
-	
+
 	For compressed textures, returns adjusted pointer to video RAM
 	For uncompressed textures, returns pointer unchanged.
-	
+
 	This does not modify the texture or it's allocation in any way, so when freeing the texture, be
 	sure to use the original, unadjusted pvr_ptr_t pointer.
 */
@@ -500,7 +500,7 @@ static inline pvr_ptr_t fDtAdjustPVRPointer(const fDtHeader * texheader, pvr_ptr
 
 /*
 	Set PVR hardware register for stride to value required for this texture
-	
+
 	You want to avoid calling this while rendering, but KOS doesn't really provide a way to do that...
 	A work around would be to only set the stride value on a frame wher  no strided texture is being rendered.
 */
@@ -511,7 +511,7 @@ static inline void fDtSetPvrStride(const fDtHeader *tex) {
 
 /*
 	These set the texture for a KOS compiled polygon header struct.
-	
+
 	The format of the texture is taken from tex, and the actual address of the texture is
 	set by video_ram_addr.
 */

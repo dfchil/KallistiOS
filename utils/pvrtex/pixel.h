@@ -126,18 +126,18 @@ static inline unsigned pxlFtoU8B(float val) {
 
 static inline unsigned pxlFloattoSpherical(float fx, float fy, float fz) {
 	v3f norm = v3Set(fx,fy,fz);
-	
+
 	norm = v3NormalizeS(norm);
-	
+
 	float azimuth = 0xff;
 	azimuth = atan2(norm.y, norm.x);
-	
+
 	float altitude = acosf(norm.z);
 	const float rnd = 0.5;
-	
+
 	int fixed_azimuth = (uint8_t)(azimuth / (2*M_PI) * 255 + rnd);
 	int fixed_altitude = (uint8_t)(altitude / M_PI * 255 + rnd) ^ 0xff;
-	
+
 	return (fixed_altitude << 8) | fixed_azimuth;
 
 }
@@ -145,21 +145,21 @@ static inline unsigned pxlRGBtoSpherical(unsigned x, unsigned y, unsigned z) {
 	float fx = pxlU8BtoF(x);
 	float fy = pxlU8BtoF(y);
 	float fz = pxlU8BtoF(z);
-	
+
 	return pxlFloattoSpherical(fx, fy, fz);
 }
 
 static inline pxlABGR8888 pxlSphericaltoABGR8888(unsigned norm) {
 	float azimuth = (norm & 0xff) / 256.0f * (2*M_PI);
 	float altitude = (((norm >> 8)& 0xff) ^ 0xff) / 255.0f * M_PI;
-	
-	
+
+
 	pxlABGR8888 pxl;
 	pxl.r = pxlFtoU8B(sinf(altitude) * cosf(azimuth));
 	pxl.g = pxlFtoU8B(sinf(altitude) * sinf(azimuth));
 	pxl.b = pxlFtoU8B(cosf(altitude));
 	pxl.a = 255;
-	
+
 	return pxl;
 }
 
@@ -476,17 +476,17 @@ static inline unsigned pxlFindClosestColor(const pxlABGR8888 src, const pxlABGR8
 	float bestdist = 1e100;
 	unsigned best = 0;
 	v4f srcf = v4Mul(v4Set(src.r, src.g, src.b, src.a), PXL_COLOR_WEIGHTS);
-	
+
 	for(unsigned i = 0; i < palsize; i++) {
 		pxlABGR8888 c = pal[i];
 		v4f colorf = v4Mul(v4Set(c.r, c.g, c.b, c.a), PXL_COLOR_WEIGHTS);
-		
+	
 		float dist = v4SqrDistance(colorf, srcf);
 		if (dist < bestdist) {
 			bestdist = dist;
 			best = i;
 		}
 	}
-	
+
 	return best;
 }

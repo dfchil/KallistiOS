@@ -24,7 +24,7 @@ static void AssertPixelFormat(ptPixelFormat fmt) {
 
 static inline Morton2D Morton2DInit(unsigned int x_bits, unsigned int y_bits) {
 	Morton2D m2d;
-	
+
 	int shared = y_bits < x_bits ? y_bits : x_bits;
 	int x_extra = x_bits - shared;
 	int y_extra = y_bits - shared;
@@ -33,7 +33,7 @@ static inline Morton2D Morton2DInit(unsigned int x_bits, unsigned int y_bits) {
 	m2d.x_mask = 0xAAAAAAAA & make_mask(shared);
 	m2d.x_mask |= (make_mask(x_extra) << (shared));
 	m2d.x_inc = 0x2 | ~m2d.x_mask;
-	
+
 	m2d.y_mask = 0x55555555 & make_mask(shared);
 	m2d.y_mask |= (make_mask(y_extra) << shared);
 	m2d.y_inc = 0x1 | ~m2d.y_mask;
@@ -100,15 +100,15 @@ size_t TotalMipSize(ptPixelFormat format, int vq, int level) {
 
 size_t CalcTextureSize(int u, int v, ptPixelFormat format, int mipmap, int vq, int codebook_size_bytes) {
 	AssertPixelFormat(format);
-	
+
 	if (mipmap)
 		v = u;
-	
+
 	size_t texsize = u * v;
-	
+
 	if (mipmap)
 		texsize = texsize *4/3 + 3;
-	
+
 	if ((unsigned)format <= PT_NORMAL || format == PT_YUV_TWID)
 		texsize *= 2;
 	else if (format == PT_PALETTE_4B)
@@ -117,16 +117,16 @@ size_t CalcTextureSize(int u, int v, ptPixelFormat format, int mipmap, int vq, i
 		;
 	else
 		BAD_PIXEL();
-	
+
 	if (vq)
 		texsize = (texsize+7) / 8 + codebook_size_bytes;
-	
+
 	return texsize;
 }
 
 size_t MipMapOffset(ptPixelFormat format, int vq, int level) {
 	AssertPixelFormat(format);
-	
+
 	static size_t const ofs[] = {
 		0x00006,	//1	6
 		0x00008,	//2	8
@@ -140,15 +140,15 @@ size_t MipMapOffset(ptPixelFormat format, int vq, int level) {
 		0x2AAB0,	//512	174768
 		0xAAAB0,	//1024	699056
 	};
-	
+
 	assert(level >= 0);
 	assert(level <= 10);
-	
+
 	size_t ret = ofs[level];
-	
+
 	if (vq)
 		return ret/8;
-	
+
 	switch(format) {
 	case PT_ARGB1555:
 	case PT_RGB565:
@@ -164,7 +164,7 @@ size_t MipMapOffset(ptPixelFormat format, int vq, int level) {
 	default:
 		BAD_PIXEL();
 	}
-	
+
 	return 0;
 }
 
@@ -172,10 +172,10 @@ void MakeTwiddled8(void *pix, int w, int h) {
 	char *cpy = malloc(w*h), *dst = pix;
 	char *src = cpy;
 	memcpy(cpy, pix, w*h);
-	
+
 	Morton2D m2d = Morton2DInit(__builtin_ffs(w), __builtin_ffs(h));
-	
-	int xmorton = 0, ymorton = 0;	
+
+	int xmorton = 0, ymorton = 0;
 	int i, j;
 	for(j = 0; j < h; j++) {
 		for(i = 0, xmorton = 0; i < w; i++) {
@@ -184,17 +184,17 @@ void MakeTwiddled8(void *pix, int w, int h) {
 		}
 		ymorton = M2DIncY(m2d, ymorton);
 	}
-	free(cpy);	
+	free(cpy);
 }
 
 void MakeTwiddled16(void *pix, int w, int h) {
 	uint16_t *cpy = malloc(w*h*2), *dst = pix;
 	uint16_t *src = cpy;
 	memcpy(cpy, pix, w*h*2);
-	
+
 	Morton2D m2d = Morton2DInit(__builtin_ffs(w), __builtin_ffs(h));
-	
-	int xmorton = 0, ymorton = 0;	
+
+	int xmorton = 0, ymorton = 0;
 	int i, j;
 	for(j = 0; j < h; j++) {
 		for(i = 0, xmorton = 0; i < w; i++) {
@@ -203,17 +203,17 @@ void MakeTwiddled16(void *pix, int w, int h) {
 		}
 		ymorton = M2DIncY(m2d, ymorton);
 	}
-	free(cpy);	
+	free(cpy);
 }
 
 void MakeTwiddled32(void *pix, int w, int h) {
 	uint32_t *cpy = malloc(w*h*4), *dst = pix;
 	uint32_t *src = cpy;
 	memcpy(cpy, pix, w*h*4);
-	
+
 	Morton2D m2d = Morton2DInit(__builtin_ffs(w), __builtin_ffs(h));
-	
-	int xmorton = 0, ymorton = 0;	
+
+	int xmorton = 0, ymorton = 0;
 	int i, j;
 	for(j = 0; j < h; j++) {
 		for(i = 0, xmorton = 0; i < w; i++) {
@@ -222,16 +222,16 @@ void MakeTwiddled32(void *pix, int w, int h) {
 		}
 		ymorton = M2DIncY(m2d, ymorton);
 	}
-	free(cpy);	
+	free(cpy);
 }
 
 void MakeDetwiddled32(void *pix, int w, int h) {
 	uint32_t *cpy = malloc(w*h*4), *dst = pix;
 	memcpy(cpy, pix, w*h*4);
-	
+
 	Morton2D m2d = Morton2DInit(__builtin_ffs(w), __builtin_ffs(h));
-	
-	int xmorton = 0, ymorton = 0;	
+
+	int xmorton = 0, ymorton = 0;
 	int i, j;
 	for(j = 0; j < h; j++) {
 		for(i = 0, xmorton = 0; i < w; i++) {
@@ -245,10 +245,10 @@ void MakeDetwiddled32(void *pix, int w, int h) {
 void MakeDetwiddled8(void *pix, int w, int h) {
 	char *cpy = malloc(w*h), *dst = pix;
 	memcpy(cpy, pix, w*h);
-	
+
 	Morton2D m2d = Morton2DInit(__builtin_ffs(w), __builtin_ffs(h));
-	
-	int xmorton = 0, ymorton = 0;	
+
+	int xmorton = 0, ymorton = 0;
 	int i, j;
 	for(j = 0; j < h; j++) {
 		for(i = 0, xmorton = 0; i < w; i++) {
@@ -273,7 +273,7 @@ void ConvertFromFormatToBGRA8888(const void *src, int pixel_format, pxlABGR8888 
 	AssertPixelFormat(pixel_format);
 	assert(src);
 	assert(dst);
-	
+
 	size_t cnt = w*h;
 	switch(pixel_format) {
 		case PT_RGB565: {
@@ -295,13 +295,13 @@ void ConvertFromFormatToBGRA8888(const void *src, int pixel_format, pxlABGR8888 
 			const uint16_t *psrc = src;
 			for(size_t i = 0; i < cnt; i++) {
 				dst[i] = pxlSphericaltoABGR8888(psrc[i]);
-				
+			
 			}
 		} break;
 		case PT_YUV_TWID: {
 			//YUV pixels always come in pairs
 			assert((cnt % 2) == 0);
-			
+		
 			const uint16_t *psrc = src;
 			for(size_t i = 0; i < cnt; i += 4) {
 				pxlABGR8888 dec[4];
@@ -316,7 +316,7 @@ void ConvertFromFormatToBGRA8888(const void *src, int pixel_format, pxlABGR8888 
 		case PT_YUV: {
 			//YUV pixels always come in pairs
 			assert((cnt % 2) == 0);
-			
+		
 			const uint16_t *psrc = src;
 			for(size_t i = 0; i < cnt; i += 2) {
 				ConvFromYUV(psrc[i+0], psrc[i+1], dst + i);
@@ -327,7 +327,7 @@ void ConvertFromFormatToBGRA8888(const void *src, int pixel_format, pxlABGR8888 
 			const uint8_t *psrc = src;
 			for(size_t i = 0; i < cnt; i++) {
 				dst[i] = pal[psrc[i]];
-				
+			
 			}
 		} break;
 		case PT_PALETTE_4B: {
@@ -338,7 +338,7 @@ void ConvertFromFormatToBGRA8888(const void *src, int pixel_format, pxlABGR8888 
 			for(size_t i = 0; i < cnt/2; i++) {
 				dst[i*2+0] = pal[psrc[i] & 0xf];
 				dst[i*2+1] = pal[psrc[i] >> 4];
-				
+			
 			}
 		} break;
 		default:
@@ -371,13 +371,13 @@ void ptConvertToTargetFormat(const pxlABGR8888 *src, unsigned w, unsigned h, pxl
 		uint16_t *pdst = dst;
 		for(size_t i = 0; i < cnt; i++) {
 			pdst[i] = pxlRGBtoSpherical(src[i].r, src[i].g, src[i].b);
-			
+		
 		}
 	} break;
 	case PT_YUV: {
 		//Untwiddled YUV
 		uint16_t *pdst = dst;
-		
+	
 		//YUV always encodes pairs
 		assert((cnt % 2) == 0);
 		for(size_t i = 0; i < cnt; i+=2) {
@@ -389,7 +389,7 @@ void ptConvertToTargetFormat(const pxlABGR8888 *src, unsigned w, unsigned h, pxl
 	case PT_YUV_TWID: {
 		//Twiddled YUV
 		uint16_t *pdst = dst;
-		
+	
 		//YUV always encodes pairs
 		assert((cnt % 2) == 0);
 		for(size_t i = 0; i < cnt; i+=4) {
@@ -408,7 +408,7 @@ void ptConvertToTargetFormat(const pxlABGR8888 *src, unsigned w, unsigned h, pxl
 		uint8_t *pdst = dst;
 		for(size_t i = 0; i < cnt; i++) {
 			pdst[i] = pxlFindClosestColor(src[i], pal, palsize);
-			
+		
 		}
 	} break;
 	case PT_PALETTE_4B: {
@@ -418,7 +418,7 @@ void ptConvertToTargetFormat(const pxlABGR8888 *src, unsigned w, unsigned h, pxl
 		uint8_t *pdst = dst;
 		for(size_t i = 0; i < cnt/2; i++) {
 			pdst[i] = (pxlFindClosestColor(src[i*2+1], pal, palsize) << 4) | pxlFindClosestColor(src[i*2], pal, palsize);
-			
+		
 		}
 	} break;
 	default:

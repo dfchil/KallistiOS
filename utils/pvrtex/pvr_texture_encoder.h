@@ -39,10 +39,10 @@ typedef enum {
 	PTE_NORMAL,
 	PTE_PALETTE_4B,
 	PTE_PALETTE_8B,
-	
+
 	//The following are not real, supported PVR formats, but used internally by some functions
 	PTE_YUV_TWID = PT_YUV_TWID,
-	
+
 	//The following cannot be used as a ptPixelFormat. They are used by pte* functions only
 	PTE_ABGR8888,
 	PTE_BUMP,	//Signals input is height map that needs to be converted to normal map
@@ -66,101 +66,101 @@ typedef struct PvrTexEncoder {
 //
 //	The following should be set by the user before using the encoder
 //
-	
+
 	//If true, generating a nontwiddled stride texture.
 	//Texture width can 8, 16, or be any multiple of 32 that is less than or equal to 1024
 	//If false, texture will be twiddled
-	bool stride;		
-	
+	bool stride;	
+
 	//Method of generating mipmaps, or no mipmaps generated
 	pteMipGen want_mips;
-	
+
 	//Number of mipmap levels, always 1 if no mipmaps
 	//Not set to final mipmap count until mipmaps have been generated
 	unsigned mip_cnt;
-	
+
 	//Color format of texture
 	ptePixelFormat pixel_format;
-	
+
 	//Size of codebook in indicies, ranges from 0 to 256
 	//0 means uncompressed, >0 will result in a VQ compressed texture
 	unsigned codebook_size;
-	
+
 	//Offset (in entries) into full codebook where the first element is
 	//If you have a 128 entry codebook, and want to use the first half, set this to zero
 	//If you want to the last half, set this to 128
 	//codebook_size + pvr_idx_offset must be <= 256
 	unsigned pvr_idx_offset;
-	
+
 	unsigned perfect_mips;	//number of mipmap levels to generate losslessly
 	bool mip_shift_correction;	//preform correction for mipmap shifting
-	
+
 	//mips between top-high_weight and perfect_mips are given extra weight (quality) when compressing, 
 	//0 means no high weight, 1 means all mips below highest have extra priority,
 	//2 means all mips below second highest are given prio, etc.
 	unsigned high_weight_mips;
-	
+
 	//Resize method to nearest valid size
 	pteFixSizeMethod resize;
-	
+
 	//Resize method to make square
 	pteFixMipSizeMethod mipresize;
-	
+
 	//Amount of dithering, 0 is none, 1 is full
 	float dither;
-	
+
 	//How to downsample on the edges
 	stbir_edge edge_method;
-	
+
 	//Generate small codebook size based on texture dimensions
 	bool auto_small_vq;
-	
+
 	//Unprocessed source images specified by user
 	unsigned src_img_cnt;
 	pteImage src_imgs[PVR_MAX_MIPMAPS];
-	
+
 	float rgb_gamma;
 	float alpha_gamma;
-	
+
 //
 //	Below here is used internally by encoder. User should avoid messing with most of these.
 //
 	//Width and height of texture in pixels (if we have mipmaps, this is largest mip level)
 	unsigned w, h;
-	
+
 	//If true, raw_mips contains twiddled data, otherwise data is normal, linear
 	bool raw_is_twiddled;
-		
+	
 	unsigned palette_size;	//size in colors, ranges from 0 to 256
 	pxlABGR8888 *palette;
-	
+
 	//Preview with all mips in one image
 	//height is h
 	unsigned final_preview_w;
 	pxlABGR8888 *final_preview;
-	
+
 	//Codebook in pvr format, uses pixel_format pixel
 	void *pvr_codebook;
-	
+
 	//PVR texture data, in the same format used by the pvr, including all mipmaps laid out in order, including padding
 	//If compressed, this is just the indices, and does NOT include the codebook
 	void *pvr_tex;
-	
+
 	//Uncompressed PVR texture data, as pvr_tex, but in 32-bit color. This is generated first, then pvr_tex is generated from it
 	pxlABGR8888 *pvr_tex32;
-	
+
 	//For the following three *_mips arrays...
 	//If mip_cnt > 1, 0 is 1x1, 1 is 2x2, 3 is 4x4...
 	//If mip_cnt == 1, 0 is only level, and its size is equal to this->w, this->h
-	
+
 	//Uncompressed source, 4-bytes per pixel
 	pxlABGR8888 *raw_mips[PVR_MAX_MIPMAPS];
-	
+
 	//Raw PVR data
 	//If texture is not compresed, this is in pixel_format
 	//If texture is compressed, these are indicies
 	uint8_t *pvr_mips[PVR_MAX_MIPMAPS];
-	
+
 	//Output preview
 	//What you get after compressing and reducing color depth
 	pxlABGR8888 *preview_mips[PVR_MAX_MIPMAPS];
@@ -210,14 +210,14 @@ void ErrorExit(const char *fmt, ...) __attribute__((noreturn));
 typedef enum pteLogLevel {
 	//When changing these, make sure to update logtypes[] in pteLogLocV
 	LOG_NONE,	//Disables logs, do not log to this type
-	
+
 	LOG_WARNING,	//Important warnings or errors
 	LOG_COMPLETION,	//Encode completion
 	LOG_PROGRESS,	//Progress of encoding
 	LOG_INFO,	//Useful info on encoding
-	
+
 	LOG_ALL,	//Prints all normal user visible logs, do not log to this type
-	
+
 	LOG_DEBUG,	//Debug info. Must be the highest level, used as bounds check in pteLogLocV
 } pteLogLevel;
 
