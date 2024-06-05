@@ -183,11 +183,11 @@ int main(int argc, char **argv) {
 	while ((option = optparse_long(&options, longopts, NULL)) != -1) {
 		switch(option) {
 		case 'h':
-			printf("%s", info_options);
+			printf("%.*s", info_options_len, info_options);
 			return 0;
 			break;
 		case 'E':
-			printf("%s", info_examples);
+			printf("%.*s", info_examples_len, info_examples);
 			return 0;
 			break;
 		case 'i':
