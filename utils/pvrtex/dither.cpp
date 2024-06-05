@@ -226,17 +226,6 @@ public:
 
 #define COMPARE_RGB 1
 
-/* 8x8 threshold map */
-static const unsigned char map[8*8] = {
-	0,48,12,60, 3,51,15,63,
-	32,16,44,28,35,19,47,31,
-	8,56, 4,52,11,59, 7,55,
-	40,24,36,20,43,27,39,23,
-	2,50,14,62, 1,49,13,61,
-	34,18,46,30,33,17,45,29,
-	10,58, 6,54, 9,57, 5,53,
-	42,26,38,22,41,25,37,21
-};
 
 static const double Gamma = 2.2; // Gamma correction we use.
 
@@ -380,10 +369,6 @@ double ColorCompare(int r1,int g1,int b1, int r2,int g2,int b2) {
 
 /* Palette */
 static const unsigned palettesize = 16;
-static const unsigned pal[palettesize] = {
-	0x080000,0x201A0B,0x432817,0x492910, 0x234309,0x5D4F1E,0x9C6B20,0xA9220F,
-	0x2B347C,0x2B7409,0xD0CA40,0xE8A077, 0x6A94AB,0xD5C4B3,0xFCE76E,0xFCFAE2
-};
 
 /* Luminance for each palette entry, to be initialized as soon as the program begins */
 static unsigned luma[palettesize];
