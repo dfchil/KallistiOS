@@ -33,7 +33,7 @@ $(TARGET): $(OBJS)
 		$(OBJS) $(PROGMAIN) -lm -lstdc++
 
 main.o: main.c info/options.h info/examples.h
-	gcc $(CFLAGS) $(MYCFLAGS) $(OPTMODE) -c main.c -o $@
+	gcc $(CFLAGS) $(MYCFLAGS) $(OPTMODE) -c $< -o $@
 
 %.o: %.c
 	gcc $(CFLAGS) $(MYCFLAGS) $(OPTMODE) -c $< -o $@
