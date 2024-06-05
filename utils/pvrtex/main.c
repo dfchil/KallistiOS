@@ -4,6 +4,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdarg.h>
+#include <libgen.h>
 
 #include "stb_image_write.h"
 #include "pvr_texture_encoder.h"
@@ -14,6 +15,8 @@
 
 #include "info/examples.h"
 #include "info/options.h"
+
+char const * program_name;
 
 int log_level = LOG_PROGRESS;
 void pteLogLocV(unsigned level, const char *file, unsigned line, const char *fmt, va_list args) {
@@ -50,6 +53,10 @@ void pteLogLoc(unsigned level, const char *file, unsigned line, const char *fmt,
 void ErrorExitV(const char *fmt, va_list args) {
 	fprintf(stderr, "Error: ");
 	vfprintf(stderr, fmt, args);
+
+	fprintf(stderr, "\nUsage:\t%s -i inputimage -o output.pvr -f format [options]\n", program_name);
+	fprintf(stderr, "\n\t%s --examples for usage examples\n"
+	"\n\t%s --help for command line options\n\n", program_name, program_name);
 	exit(1);
 }
 
@@ -138,8 +145,9 @@ int GetOptMap(const OptionMap *map, size_t mapsize, const char *name, int defaul
 }
 
 
-
 int main(int argc, char **argv) {
+	program_name = (char*)basename(argv[0]);
+
 	PvrTexEncoder pte;
 	pteInit(&pte);
 
@@ -250,7 +258,7 @@ int main(int argc, char **argv) {
 				break;
 			//Fallthrough
 		case 'V':
-			printf("pvrtex - Dreamcast Texture Encoder - Version 1.01\n");
+			printf("pvrtex - Dreamcast Texture Encoder - Version 1.0.2\n");
 			return 0;
 		case 'b':
 			pteLog(LOG_WARNING, "Option --bilinear does nothing\n");
@@ -319,8 +327,7 @@ int main(int argc, char **argv) {
 			extension = "";
 	}
 
-	ErrorExitOn(!have_output && !have_preview, "No output or preview file name specified, nothing to do\n"
-	"Usage: pvrtex -i inputimage -o output.pvr -f format [options]\n");
+	ErrorExitOn(!have_output && !have_preview, "No output or preview file name specified, nothing to do\n");
 	ErrorExitOn(fname_cnt == 0, "No input files specified\n");
 
 	pteLog(LOG_PROGRESS, "Reading input...\n");
