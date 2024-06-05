@@ -18,20 +18,28 @@ MYCPPFLAGS=$(MYFLAGS)
 MYCFLAGS=$(MYFLAGS) -Wno-pointer-sign
 
 
+define textSegment2Header
+	awk '/$1/,/--------------------------------------------------------------------------/' README|xxd -i -n $2_$3 > $2/$3.h
+endef
+
+
 TOOLINSTALLDIR=$(KOS_BASE)/../bin
 
 .PHONY: all clean
+
+
+$(TARGET): $(OBJS)
+	gcc $(OPTMODE) -o $(TARGET) \
+		$(OBJS) $(PROGMAIN) -lm -lstdc++
+
+main.o: info/options.h info/examples.h
+	gcc $(CFLAGS) $(MYCFLAGS) $(OPTMODE) -c main.c -o $@
 
 %.o: %.c
 	gcc $(CFLAGS) $(MYCFLAGS) $(OPTMODE) -c $< -o $@
 
 %.o: %.cpp
 	gcc $(CFLAGS) $(MYCPPFLAGS) $(CXXFLAGS) $(OPTMODE) -c $< -o $@
-
-
-$(TARGET): $(OBJS)
-	gcc $(OPTMODE) -o $(TARGET) \
-		$(OBJS) $(PROGMAIN) -lm -lstdc++
 
 clean:
 	rm -f $(TARGET) $(OBJS) README
@@ -43,3 +51,9 @@ all: $(TARGET) README
 
 install: all 
 	install -m 755 $(TARGET) $(TOOLINSTALLDIR)/
+
+info/options.h: README
+	$(call textSegment2Header,Command Line Options:,info,options)
+
+info/examples.h: README
+	$(call textSegment2Header,Usage Examples:,info,examples)

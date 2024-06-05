@@ -1,5 +1,8 @@
 pvrtex converts images to Dreamcast PowerVR textures.
 
+Created by TapamN, 2023
+
+
 It is designed to work similarly to tvspelsfreak's texconv, so it can be used in place of texconv will minimal changes. It might be helpful to read the readme for texconv for additional information not covered here. In particular, there are explainations of the types of textures supported by the Dreamcast.
 
 Compared to texconv, pvrtex has the following enhancements:
@@ -38,9 +41,7 @@ pvrtex -i mip256.png -i mip128.png -i mip64.png -i mip32.png -i mip16.png -o tex
 
 Building:
 
-	Run "make".
-
-	:-|
+	Run "make install" to install pvrtex to ${KOS_HOME}/../bin/
 
 	To generate the proper README with linebreaks, from readme_unformatted.txt, run "make README" or "make all". Requires "fmt".
 
@@ -49,7 +50,10 @@ Building:
 Command Line Options:
 
 --help, -h
-	Displays help
+	Displays command line options
+
+--examples -E
+	Displays usage examples
 
 --version, -V
 	Displays version
@@ -298,20 +302,6 @@ Future Ideas
 	* Allow sizing to arbitary size (i.e. --resize 256x256)
 
 	* Add a filter to try to hide the palettized compressed mipmap bug
-
---------------------------------------------------------------------------
-
-History:
-
-	Version 1.01
-		Program now displays error message when an error occurs loading a source image. Previously, the program would hit an assertion.
-
-		Fixed "--resize down" option. Previously, the program would round down sizes that were already a power-of-two, now sizes that are already POT are left unchanged.
-
-		Included a missing FFmpeg header file.
-
-	Version 1.0
-		Initial release
 
 --------------------------------------------------------------------------
 

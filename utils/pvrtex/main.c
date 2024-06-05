@@ -12,6 +12,9 @@
 #include "file_pvr.h"
 #include "file_tex.h"
 
+#include "info/examples.h"
+#include "info/options.h"
+
 int log_level = LOG_PROGRESS;
 void pteLogLocV(unsigned level, const char *file, unsigned line, const char *fmt, va_list args) {
 	static const char * logtypes[] = {
@@ -142,6 +145,7 @@ int main(int argc, char **argv) {
 
 	struct optparse_long longopts[] = {
 		{"help", 'h', OPTPARSE_NONE},
+		{"examples", 'E', OPTPARSE_NONE},
 		{"out", 'o', OPTPARSE_REQUIRED},
 		{"in", 'i', OPTPARSE_REQUIRED},
 		{"format", 'f', OPTPARSE_REQUIRED},
@@ -179,7 +183,11 @@ int main(int argc, char **argv) {
 	while ((option = optparse_long(&options, longopts, NULL)) != -1) {
 		switch(option) {
 		case 'h':
-			printf("No help yet\n");
+			printf("%s", info_options);
+			return 0;
+			break;
+		case 'E':
+			printf("%s", info_examples);
 			return 0;
 			break;
 		case 'i':
@@ -311,7 +319,8 @@ int main(int argc, char **argv) {
 			extension = "";
 	}
 
-	ErrorExitOn(!have_output && !have_preview, "No output or preview file name specified, nothing to do\n");
+	ErrorExitOn(!have_output && !have_preview, "No output or preview file name specified, nothing to do\n"
+	"Usage: pvrtex -i inputimage -o output.pvr -f format [options]\n");
 	ErrorExitOn(fname_cnt == 0, "No input files specified\n");
 
 	pteLog(LOG_PROGRESS, "Reading input...\n");

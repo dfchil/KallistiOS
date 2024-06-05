@@ -22,8 +22,6 @@
 #ifndef AVUTIL_THREAD_H
 #define AVUTIL_THREAD_H
 
-#include "config.h"
-
 #if HAVE_PRCTL
 #include <sys/prctl.h>
 #endif
