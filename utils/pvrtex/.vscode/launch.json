@@ -10,7 +10,7 @@
       "request": "launch",
       "program": "${workspaceFolder}/pvrtex",
       "args": ["-i", "${workspaceFolder}/test/title.png", "-o", "${workspaceFolder}/test/title.dt", "-f", "PAL8BPP" ],
-      "stopAtEntry": true,
+      "stopAtEntry": false,
       "cwd": "${workspaceFolder}",
       "environment": [],
       "externalConsole": false,
