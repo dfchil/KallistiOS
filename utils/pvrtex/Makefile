@@ -1,5 +1,5 @@
 #Uncomment when debugging
-#DEBUGBUILD = true
+DEBUGBUILD=true
 
 TARGET = pvrtex
 OBJS = elbg.o mem.o log.o bprint.o avstring.o lfg.o crc.o md5.o stb_image_impl.o \
@@ -7,13 +7,16 @@ OBJS = elbg.o mem.o log.o bprint.o avstring.o lfg.o crc.o md5.o stb_image_impl.o
 	dither.o tddither.o vqcompress.o mycommon.o file_common.o \
 	file_pvr.o file_tex.o file_dctex.o pvr_texture_encoder.o main.o
 
-ifdef $(DEBUGBUILD)
+ifdef DEBUGBUILD
 	OPTMODE= -Og -pg -g
 else
 	OPTMODE= -O3 -flto
 endif
 
-MYFLAGS=-flto=auto -Wall -Wextra -Wno-unused-parameter -Wno-sign-compare -Ilibavutil -I. -DCONFIG_MEMORY_POISONING=0 -DHAVE_FAST_UNALIGNED=0
+MYFLAGS=-flto=auto -Wall -Wextra -Wno-unused-parameter -Wno-sign-compare -Ilibavutil -I. \
+		-DCONFIG_MEMORY_POISONING=0 -DHAVE_FAST_UNALIGNED=0 \
+		-I$(KOS_BASE)/kernel/arch/dreamcast/include/ \
+		-I$(KOS_BASE)/addons/include/  
 MYCPPFLAGS=$(MYFLAGS)
 MYCFLAGS=$(MYFLAGS) -Wno-pointer-sign
 
