@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
+#include <dc/pvr.h>
 
 //These match up with the PVR hardware texture format bits
 typedef enum fdtPixelFormat {
