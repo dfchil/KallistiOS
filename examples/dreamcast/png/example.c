@@ -30,7 +30,7 @@ void back_init(void) {
 /* init font */
 void font_init(void) {
     int i, x, y, c;
-    unsigned short temp_tex[256 * 128 * 2];
+    static unsigned short temp_tex[256 * 128 * 2];
 
     font_tex = pvr_mem_malloc(256 * 256 * 2);
 
@@ -97,7 +97,7 @@ void draw_back(void) {
     vert.v = 0.0f;
     pvr_prim(&vert, sizeof(vert));
 
-    vert.x = 1.0f;
+    vert.x = 0.0f;
     vert.y = 480.0f;
     vert.z = 1.0f;
     vert.u = 0.0f;

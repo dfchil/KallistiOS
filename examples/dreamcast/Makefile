@@ -6,7 +6,7 @@
 #
 
 DIRS = 2ndmix basic libdream kgl hello sound png network vmu conio pvr video \
-	   lua parallax modem dreameye sd g1ata lightgun keyboard sdl dev rumble \
+	   lua parallax modem dreameye filesystem sd g1ata lightgun keyboard sdl dev rumble \
 	   micropython
 
 ifdef KOS_CCPLUS
@@ -20,12 +20,14 @@ all:
 		$(KOS_MAKE) check-dir DIR=$$dir; \
 	done;
 
-	@if [ -f errors.txt ]; then \
+	@error_count=$$(cat error_count.txt 2>/dev/null || echo 0); \
+	if [ -f errors.txt ]; then \
 		echo "\n-------------------------------------------------"; \
-		echo "$$(cat error_count.txt 2>/dev/null || echo 0) error(s) occurred during the build process:"; \
+		echo "$$error_count error(s) occurred during the build process:"; \
 		cat errors.txt; \
-	fi;
-	@rm -f errors.txt error_count.txt
+	fi; \
+	rm -f errors.txt error_count.txt; \
+	exit $$error_count
 
 # ALGORITHM EXPLANATION:
 # This script recursively checks each directory to determine if it should 
