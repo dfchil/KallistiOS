@@ -69,6 +69,29 @@ void wait_for_dev_attach(maple_device_t **dev_ptr, unsigned int func) {
     }
 }
 
+
+typedef struct {
+  uint32_t pattern;
+  const char *description;
+} baked_pattern_t;
+
+static size_t catalog_index = 0;
+static const baked_pattern_t catalog[] = {
+    {.pattern = 0x011A7010, .description = "Basic Thud (simple .5s jolt)"},
+    {.pattern = 0x31071011, .description = "Car Idle (69 Mustang)"},
+    {.pattern = 0x2615F010, .description = "Car Idle (VW beetle)"},
+    {.pattern = 0x3339F010, .description = "Eathquake (Vibrate, and fade out)"},
+    {.pattern = 0x05281011, .description = "Helicopter"},
+    {.pattern = 0x00072010, .description = "Ship's Thrust (as in AAC)"},
+};
+
+static inline uint32_t word2hexbytes(uint32_t word, uint8_t *bytes) {
+  for (int i = 0; i < 8; i++) {
+    bytes[i] = (word >> (28 - (i * 4))) & 0xf;
+  }
+}
+
+
 int main(int argc, char *argv[]) {
 
     cont_state_t *state;
@@ -79,8 +102,9 @@ int main(int argc, char *argv[]) {
     int i = 0, count = 0;
     uint16_t old_buttons = 0, rel_buttons = 0;
     uint32_t effect = 0;
-    uint8_t n[8] = { 0, 0, 0, 0, 0, 0, 0, 0 }; //nibbles
+    uint8_t n[8];
     char s[8][2] = { "", "", "", "", "", "", "", "" };
+    word2hexbytes(0, n);
 
     pvr_init_defaults();
 
@@ -148,6 +172,16 @@ int main(int argc, char *argv[]) {
             if(n[i] > 0) n[i]--;
         }
 
+        if ((state->buttons & CONT_X) && (rel_buttons & CONT_X)) {
+            printf("Setting baked pattern:\n\t'%s'\n", catalog[catalog_index].description);
+            word2hexbytes(catalog[catalog_index].pattern, n);
+            catalog_index++;
+            if (catalog_index >= sizeof(catalog) / sizeof(baked_pattern_t)) {
+                catalog_index = 0;
+            }
+        }
+
+
         if((state->buttons & CONT_A) && (rel_buttons & CONT_A)) {
             effect = (n[0] << 28) + (n[1] << 24) + (n[2] << 20) + (n[3] << 16) +
                      (n[4] << 12) + (n[5] << 8) + (n[6] << 4) + (n[7] << 0);
@@ -183,6 +217,10 @@ int main(int argc, char *argv[]) {
 
         plx_fcxt_setpos_pnt(cxt, &w);
         plx_fcxt_draw(cxt, "Press B to stop rumblin.");
+        w.y += 25.0f;
+
+        plx_fcxt_setpos_pnt(cxt, &w);
+        plx_fcxt_draw(cxt, "Press X for next baked pattern");
         w.y += 25.0f;
 
         plx_fcxt_setpos_pnt(cxt, &w);
