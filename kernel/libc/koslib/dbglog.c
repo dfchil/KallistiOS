@@ -5,9 +5,11 @@
 */
 
 #include <stdio.h>
-#include <kos/dbglog.h>
 #include <stdarg.h>
+#include <unistd.h>
 #include <string.h>
+
+#include <kos/dbglog.h>
 #include <kos/thread.h>
 #include <kos/dbgio.h>
 #include <arch/spinlock.h>
@@ -29,6 +31,7 @@ void dbglog_set_level(int level) {
 /* Kernel debug logging facility */
 void dbglog(int level, const char *fmt, ...) {
     va_list args;
+    int i;
 
     /* If this log level is blocked out, don't even bother */
     if(level > dbglog_level)
@@ -39,13 +42,14 @@ void dbglog(int level, const char *fmt, ...) {
         spinlock_lock(&mutex);
 
     va_start(args, fmt);
-    (void)vsprintf(printf_buf, fmt, args);
+    i = vsnprintf(printf_buf, sizeof(printf_buf), fmt, args);
     va_end(args);
 
-    if(irq_inside_int())
-        dbgio_write_str(printf_buf);
-    else
-        fs_write(1, printf_buf, strlen(printf_buf));
+    if(i > 0) {
+        if(irq_inside_int() || 
+            (fs_write(STDOUT_FILENO, printf_buf, strlen(printf_buf)) < 0))
+                dbgio_write_str(printf_buf);        
+    }
 
     if(level >= DBG_ERROR && !irq_inside_int())
         spinlock_unlock(&mutex);
