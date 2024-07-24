@@ -135,22 +135,21 @@ pulse effect, when ORed with the special field. */
 void print_rumble_fields(uint32_t raw) {
   rumble_fields_t fields = {.raw = raw};
   printf("Rumble Fields:\n");
-  printf("\tspecial_pulse:   %s\n", fields.special_pulse ? "true" : "false");
+  printf("\tspecial_pulse:   %u\n", fields.special_pulse);
   printf("\tspecial_motor1:  %u\n", fields.special_motor1);
   printf("\tspecial_motor2:  %u\n", fields.special_motor2);
 
-  printf("\tfx1_pulse:       %s\n", fields.fx1_pulse ? "true" : "false");
+  printf("\tfx1_pulse:       %u\n", fields.fx1_pulse);
   printf("\tfx1_powersave:   %u\n", fields.fx1_powersave);
   printf("\tfx1_intensity:   %u\n", fields.fx1_intensity);
 
   printf("\tfx2_lintensity:  %u\n", fields.fx2_lintensity);
-  printf("\tfx2_pulse:       %s\n", fields.fx2_pulse ? "true" : "false");
+  printf("\tfx2_pulse:       %u\n", fields.fx2_pulse);
   printf("\tfx2_uintensity:  %u\n", fields.fx2_uintensity);
-  printf("\tfx2_decay:       %s\n", fields.fx2_decay ? "true" : "false");
+  printf("\tfx2_decay:       %u\n", fields.fx2_decay);
 
   printf("\tduration:        %u\n", fields.duration);
 }
-
 /* This blocks waiting for a specified device to be present and valid */
 void wait_for_dev_attach(maple_device_t **dev_ptr, unsigned int func) {
     maple_device_t *dev = *dev_ptr;
