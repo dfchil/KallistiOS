@@ -302,7 +302,7 @@ int main(int argc, char *argv[]) {
             purupuru_rumble_raw(purudev, effect);
             /* We print these out to make it easier to track the options chosen */
             printf("Rumble: 0x%lx!\n", effect);
-						print_rumble_fields(effect);
+            print_rumble_fields(effect);
         }
 
         if((state->buttons & CONT_B) && (rel_buttons & CONT_B)) {
