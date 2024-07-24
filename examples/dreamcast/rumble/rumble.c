@@ -37,16 +37,68 @@ plx_fcxt_t *cxt;
 
 
 typedef union rumble_fields {
+  uint32_t raw;
   struct {
-    /** \brief  The duration of the effect. No idea on units... */
-    uint32_t duration : 8;
+    /* Special Effects and motor select. The normal purupuru packs will
+only have one motor. Selecting MOTOR2 for these is probably not
+a good idea. The PULSE setting here supposably creates a sharp
+pulse effect, when ORed with the special field. */
 
-    /** \brief  Lower-nibble of effect2 convenience macro.
+    /** \brief  Yet another pulse effect.
+        This supposedly creates a sharp pulse effect.
+    */
+    uint32_t special_pulse : 1;
+    uint32_t : 3; // unused
 
-        This macro is for setting the lower nibble of the effect2 field of the
-        purupuru_effect_t. This value works with the upper nibble of the effect1
-        field to increase the intensity of the rumble effect. Valid values are
-       0-7.
+    /** \brief  Select motor #1.
+
+        Most jump packs only have one motor, but on things that do have more
+       than one motor (like PS1->Dreamcast controller adapters that support
+       rumble), this selects the first motor.
+    */
+    uint32_t special_motor1 : 1;
+    uint32_t : 2; // unused
+
+    /** \brief  Select motor #2.
+
+        Most jump packs only have one motor, but on things that do have more
+       than one motor (like PS1->Dreamcast controller adapters that support
+       rumble), this selects the second motor.
+    */
+    uint32_t special_motor2 : 1;
+
+    /** \brief  Ignore this command.
+
+        Valid value 15 (0xF).
+
+        Most jump packs will ignore commands with this set in effect1,
+       apparently.
+    */
+    uint32_t fx1_powersave : 4;
+
+    /** \brief  Upper nibble of effect1.
+
+        This value works with the lower nibble of the effect2 field to
+        increase the intensity of the rumble effect.
+        Valid values are 0-7.
+
+        \see    rumble_fields_t.fx2_lintensity
+    */
+    uint32_t fx1_intensity : 3;
+
+    /** \brief  Give a pulse effect to the rumble.
+
+        This probably should be used with rumble_fields_t.fx1_pulse as well.
+
+        \see    rumble_fields_t.fx2_pulse
+    */
+    uint32_t fx1_pulse : 1;
+
+    /** \brief  Lower-nibble of effect2.
+
+        This value works with the upper nibble of the effect1
+        field to increase the intensity of the rumble effect.
+        Valid values are 0-7.
 
         \see    rumble_fields_t.fx1_intensity
     */
@@ -54,16 +106,16 @@ typedef union rumble_fields {
 
     /** \brief  Give a pulse effect to the rumble.
 
-        This probably should be used with PURUPURU_EFFECT1_PULSE as well.
+        This probably should be used with rumble_fields_t.fx1_pulse as well.
 
         \see    rumble_fields_t.fx1_intensity
     */
     uint32_t fx2_pulse : 1;
-    /** \brief  Upper-nibble of effect2 convenience macro.
 
-        This macro is for setting the upper nibble of the effect2 field of the
-        purupuru_effect_t. This apparently lowers the rumble's intensity
-       somewhat. Valid values are 0-7.
+    /** \brief  Upper-nibble of effect2.
+
+        This apparently lowers the rumble's intensity somewhat.
+        Valid values are 0-7.
     */
     uint32_t fx2_uintensity : 3;
 
@@ -74,78 +126,29 @@ typedef union rumble_fields {
     /** \brief  Give a decay effect to the rumble on some packs. */
     uint32_t fx2_decay : 1;
 
-    /** \brief  Ignore this command.
-            Valid value 15 (0xF).
-        Most jump packs will ignore commands with this set in effect1,
-       apparently.
-    */
-    uint32_t fx1_powersave : 3;
-    uint32_t : 1; // unused
-
-    /** \brief  Upper nibble of effect1 convenience macro.
-
-        This macro is for setting the upper nibble of the effect1 field of the
-        purupuru_effect_t. This value works with the lower nibble of the effect2
-        field to increase the intensity of the rumble effect. Valid values are
-       0-7.
-
-        \see    rumble_fields_t.fx2_lintensity
-    */
-    uint32_t fx1_intensity : 3;
-
-    /** \brief  Give a pulse effect to the rumble.
-
-        This probably should be used with PURUPURU_EFFECT2_PULSE as well.
-
-        \see    rumble_fields_t.fx2_pulse
-    */
-    uint32_t fx1_pulse : 1;
-
-    /** \brief  Yet another pulse effect.
-
-        This supposedly creates a sharp pulse effect.
-    */
-    uint32_t special_pulse : 1;
-
-    /* Special Effects and motor select. The normal purupuru packs will
-only have one motor. Selecting MOTOR2 for these is probably not
-a good idea. The PULSE setting here supposably creates a sharp
-pulse effect, when ORed with the special field. */
-    uint32_t : 3; // unused
-    /** \brief  Select motor #1.
-
-        Most jump packs only have one motor, but on things that do have more
-       than one motor (like PS1->Dreamcast controller adapters that support
-       rumble), this selects the first motor.
-    */
-    uint32_t special_motor1 : 1;
-    uint32_t : 3; // unused
-
-    /** \brief  Select motor #2.
-
-        Most jump packs only have one motor, but on things that do have more
-       than one motor (like PS1->Dreamcast controller adapters that support
-       rumble), this selects the second motor.
-    */
-    uint32_t special_motor2 : 1;
+    /** \brief  The duration of the effect. No idea on units... */
+    uint32_t duration : 8;
   };
-  uint32_t raw;
 } rumble_fields_t;
+
 
 void print_rumble_fields(uint32_t raw) {
   rumble_fields_t fields = {.raw = raw};
   printf("Rumble Fields:\n");
-  printf("\tduration:        %d\n", fields.duration);
-  printf("\tfx2_lintensity:  %d\n", fields.fx2_lintensity);
-  printf("\tfx2_pulse:       %s\n", fields.fx2_pulse ? "true" : "false");
-  printf("\tfx2_uintensity:  %d\n", fields.fx2_uintensity);
-  printf("\tfx2_decay:       %s\n", fields.fx2_decay ? "true" : "false");
-  printf("\tfx1_powersave:   %d\n", fields.fx1_powersave);
-  printf("\tfx1_intensity:   %d\n", fields.fx1_intensity);
-  printf("\tfx1_pulse:       %s\n", fields.fx1_pulse ? "true" : "false");
   printf("\tspecial_pulse:   %s\n", fields.special_pulse ? "true" : "false");
-  printf("\tspecial_motor1:  %d\n", fields.special_motor1);
-  printf("\tspecial_motor2:  %d\n", fields.special_motor2);
+  printf("\tspecial_motor1:  %u\n", fields.special_motor1);
+  printf("\tspecial_motor2:  %u\n", fields.special_motor2);
+
+  printf("\tfx1_pulse:       %s\n", fields.fx1_pulse ? "true" : "false");
+  printf("\tfx1_powersave:   %u\n", fields.fx1_powersave);
+  printf("\tfx1_intensity:   %u\n", fields.fx1_intensity);
+
+  printf("\tfx2_lintensity:  %u\n", fields.fx2_lintensity);
+  printf("\tfx2_pulse:       %s\n", fields.fx2_pulse ? "true" : "false");
+  printf("\tfx2_uintensity:  %u\n", fields.fx2_uintensity);
+  printf("\tfx2_decay:       %s\n", fields.fx2_decay ? "true" : "false");
+
+  printf("\tduration:        %u\n", fields.duration);
 }
 
 /* This blocks waiting for a specified device to be present and valid */
@@ -198,12 +201,11 @@ static const baked_pattern_t catalog[] = {
     {.pattern = 0x00072010, .description = "Ship's Thrust (as in AAC)"},
 };
 
-static inline uint32_t word2hexbytes(uint32_t word, uint8_t *bytes) {
+static inline void word2hexbytes(uint32_t word, uint8_t *bytes) {
   for (int i = 0; i < 8; i++) {
     bytes[i] = (word >> (28 - (i * 4))) & 0xf;
   }
 }
-
 
 int main(int argc, char *argv[]) {
 
