@@ -135,17 +135,17 @@ pulse effect, when ORed with the special field. */
 void print_rumble_fields(uint32_t raw) {
   rumble_fields_t fields = {.raw = raw};
   printf("Rumble Fields:\n");
-  printf("\tduration: %d\n", fields.duration);
-  printf("\tfx2_lintensity: %d\n", fields.fx2_lintensity);
-  printf("\tfx2_pulse: %s\n", fields.fx2_pulse ? "true" : "false");
-  printf("\tfx2_uintensity: %d\n", fields.fx2_uintensity);
-  printf("\tfx2_decay: %s\n", fields.fx2_decay ? "true" : "false");
-  printf("\tfx1_powersave: %d\n", fields.fx1_powersave);
-  printf("\tfx1_intensity: %d\n", fields.fx1_intensity);
-  printf("\tfx1_pulse: %s\n", fields.fx1_pulse ? "true" : "false");
-  printf("\tspecial_pulse: %s\n", fields.special_pulse ? "true" : "false");
-  printf("\tspecial_motor1: %d\n", fields.special_motor1);
-  printf("\tspecial_motor2: %d\n", fields.special_motor2);
+  printf("\tduration:        %d\n", fields.duration);
+  printf("\tfx2_lintensity:  %d\n", fields.fx2_lintensity);
+  printf("\tfx2_pulse:       %s\n", fields.fx2_pulse ? "true" : "false");
+  printf("\tfx2_uintensity:  %d\n", fields.fx2_uintensity);
+  printf("\tfx2_decay:       %s\n", fields.fx2_decay ? "true" : "false");
+  printf("\tfx1_powersave:   %d\n", fields.fx1_powersave);
+  printf("\tfx1_intensity:   %d\n", fields.fx1_intensity);
+  printf("\tfx1_pulse:       %s\n", fields.fx1_pulse ? "true" : "false");
+  printf("\tspecial_pulse:   %s\n", fields.special_pulse ? "true" : "false");
+  printf("\tspecial_motor1:  %d\n", fields.special_motor1);
+  printf("\tspecial_motor2:  %d\n", fields.special_motor2);
 }
 
 /* This blocks waiting for a specified device to be present and valid */
