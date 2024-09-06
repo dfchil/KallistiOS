@@ -2,7 +2,7 @@
 
    hardware/g1ata.c
    Copyright (C) 2013, 2014, 2015 Lawrence Sebald
-   Copyright (C) 2015, 2023 Ruslan Rostovtsev
+   Copyright (C) 2015, 2023, 2024 Ruslan Rostovtsev
 */
 
 #include <errno.h>
@@ -109,8 +109,12 @@ typedef struct ata_devdata {
 #define G1_ATA_DMA_STATUS       0xA05F7418      /* Read/Write */
 #define G1_ATA_DMA_PROTECTION   0xA05F74B8      /* Write-only */
 
+/* Protection register code. */
+#define G1_DMA_UNLOCK_CODE      0x8843
 /* System memory protection unlock value. */
-#define G1_DMA_UNLOCK_SYSMEM    0x8843407F
+#define G1_DMA_UNLOCK_SYSMEM    (G1_DMA_UNLOCK_CODE << 16 | 0x407F)
+/* All memory protection unlock value. */
+#define G1_DMA_UNLOCK_ALLMEM    (G1_DMA_UNLOCK_CODE << 16 | 0x007F)
 
 /* Bitmasks for the STATUS_REG/ALT_STATUS registers. */
 #define G1_ATA_SR_ERR   0x01
@@ -232,13 +236,14 @@ static void g1_ata_set_sector_and_count(uint64_t sector, uint32_t count, int lba
 }
 
 static void g1_dma_irq_hnd(uint32 code, void *data) {
+    int can_lba48 = CAN_USE_LBA48();
     unsigned int nb_sectors;
 
     /* XXXX: Probably should look at the code to make sure it isn't an error. */
     (void)code;
     (void)data;
 
-    if(dma_in_progress && dma_nb_sectors > 256) {
+    if(dma_in_progress && !can_lba48 && dma_nb_sectors > 256) {
         dma_sector += 256;
         dma_nb_sectors -= 256;
         nb_sectors = dma_nb_sectors <= 256 ? dma_nb_sectors : 256;
@@ -664,8 +669,10 @@ int g1_ata_read_lba_dma(uint64_t sector, size_t count, void *buf,
         return -1;
     }
 
-    /* Invalidate the dcache over the range of the data. */
-    dcache_inval_range((uint32)buf, count * 512);
+    if((addr >> 24) == 0x0C) {
+        /* Invalidate the dcache over the range of the data. */
+        dcache_inval_range((uint32)buf, count * 512);
+    }
 
     /* Lock the mutex. It will be unlocked later in the IRQ handler. */
     if(g1_ata_mutex_lock())
@@ -844,8 +851,10 @@ int g1_ata_write_lba_dma(uint64_t sector, size_t count, const void *buf,
         return -1;
     }
 
-    /* Flush the dcache over the range of the data. */
-    dcache_flush_range((uint32)buf, count * 512);
+    if((addr >> 24) == 0x0C) {
+        /* Flush the dcache over the range of the data. */
+        dcache_flush_range((uint32)buf, count * 512);
+    }
 
     /* Lock the mutex. It will be unlocked in the IRQ handler later. */
     if(g1_ata_mutex_lock())
@@ -1056,7 +1065,7 @@ static int g1_ata_scan(void) {
         if(!g1_ata_set_transfer_mode(ATA_TRANSFER_WDMA(2))) {
             OUT32(G1_ATA_DMA_RACCESS_WAIT, G1_ACCESS_WDMA_MODE2);
             OUT32(G1_ATA_DMA_WACCESS_WAIT, G1_ACCESS_WDMA_MODE2);
-            OUT32(G1_ATA_DMA_PROTECTION, G1_DMA_UNLOCK_SYSMEM);
+            OUT32(G1_ATA_DMA_PROTECTION, G1_DMA_UNLOCK_ALLMEM);
         }
         else {
             device.wdma_modes = 0;
