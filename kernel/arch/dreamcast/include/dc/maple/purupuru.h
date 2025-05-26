@@ -174,9 +174,9 @@ pulse effect, when ORed with the special field. */
     /** \brief  Give a decay effect to the rumble on some packs. */
     uint32_t fx2_decay : 1;
 
-    // /** \brief  The duration of the effect. No idea on units...  valid values
-    //  * 0-255*/
-    uint32_t :8;  /* this is covered by duration in the first anonymous struct, so not named here */
+    /* these last bits are covered by duration in the first anonymous struct,
+       so not named here */
+    uint32_t :8;  
   };
 } purupuru_effect_t;
 
