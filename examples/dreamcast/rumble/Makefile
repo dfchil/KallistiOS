@@ -19,7 +19,7 @@ rm-elf:
 	-rm -f $(TARGET) romdisk.*
 
 $(TARGET): $(OBJS)
-	kos-cc -o $(TARGET) $(OBJS) -lparallax -lz
+	kos-cc -o $(TARGET) $(OBJS) -lparallax -lz -DDEBUG
 
 run: $(TARGET)
 	$(KOS_LOADER) $(TARGET)

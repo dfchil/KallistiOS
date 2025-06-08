@@ -35,36 +35,46 @@
 
 #include <plx/font.h>
 
+#define DEBUG 0
+
+#ifdef DEBUG
+#include <arch/gdb.h>
+#endif
+
 KOS_INIT_FLAGS(INIT_DEFAULT);
 
 plx_fcxt_t *cxt;
 
 typedef struct purupuru_cmd {
-  /* Continuous vibration setting bit */
-  uint8_t continous : 1;
-  /*  Reserved always 0 */
-  uint8_t  : 3;
-  /** Vibration source No. use 1 for most purupuru */
-  uint8_t source : 4;
-  /* Backward direction (- direction) intensity setting value */
-  uint8_t back_dir : 3;
-  /** Divergent vibration setting bit */
-  uint8_t diverge : 1;
-  /* Forward direction (+ direction) intensity setting value */
-  uint8_t frwd_dir : 3;
-  /* Convergent vibration setting bit */
-  uint8_t converge : 1;
-  /* Vibration frequency. for most purupuru 4-59 */
-  uint8_t frequency;
-  /* Vibration inclination period. */
-  uint8_t inclination_period;
+  union {
+    uint32_t raw; /**< \brief Raw command value */
+    struct {
+      /* Continuous vibration setting bit */
+      uint8_t continous : 1;
+      /*  Reserved always 0 */
+      uint8_t : 3;
+      /** Vibration source No. use 1 for most purupuru */
+      uint8_t source : 4;
+      /* Backward direction (- direction) intensity setting value */
+      uint8_t back_dir : 3;
+      /** Divergent vibration setting bit */
+      uint8_t diverge : 1;
+      /* Forward direction (+ direction) intensity setting value */
+      uint8_t frwd_dir : 3;
+      /* Convergent vibration setting bit */
+      uint8_t converge : 1;
+      /* Vibration frequency. for most purupuru 4-59 */
+      uint8_t frequency;
+      /* Vibration inclination period. */
+      uint8_t inclination_period;
+    };
+  };
 } purupuru_cmd_t;
-
 
 void print_purupuru_cmd(purupuru_cmd_t *cmd) {
   printf("Purupuru Command:\n");
   printf("  .continous        =  %u,\n", cmd->continous);
-//   printf("  ._reserved        =  %u,\n", cmd->_reserved);
+  //   printf("  ._reserved        =  %u,\n", cmd->_reserved);
   printf("  .source           =  %u,\n", cmd->source);
   printf("  .back_dir         =  %u,\n", cmd->back_dir);
   printf("  .diverge          =  %u,\n", cmd->diverge);
@@ -133,7 +143,10 @@ typedef struct {
 } baked_pattern_t;
 
 static size_t catalog_index = 0;
-static const baked_pattern_t catalog[] = {
+
+static baked_pattern_t catalog[8] = {
+    {.pattern = 0, .description = "custom one"},
+    {.pattern = 0, .description = "custom two"},
     {.pattern = 0x011A7010, .description = "Basic Thud (simple .5s jolt)"},
     {.pattern = 0x31071011, .description = "Car Idle (69 Mustang)"},
     {.pattern = 0x2615F010, .description = "Car Idle (VW beetle)"},
@@ -149,6 +162,30 @@ static inline void word2hexbytes(uint32_t word, uint8_t *bytes) {
 }
 
 int main(int argc, char *argv[]) {
+
+#ifdef DEBUG
+  gdb_init();
+#endif
+
+  catalog[0].pattern = ((purupuru_cmd_t){.continous = 0,
+                                         .source = 1,
+                                         .back_dir = 7,
+                                         .diverge = 0,
+                                         .frwd_dir = 7,
+                                         .converge = 0,
+                                         .frequency = 28,
+                                         .inclination_period = 128})
+                           .raw;
+  catalog[1].pattern = ((purupuru_cmd_t){.continous = 1,
+                                         .source = 1,
+                                         .back_dir = 3,
+                                         .diverge = 1,
+                                         .frwd_dir = 0,
+                                         .converge = 0,
+                                         .frequency = 12,
+                                         .inclination_period = 128})
+                           .raw;
+
   cont_state_t *state;
   maple_device_t *contdev = NULL, *purudev = NULL;
 
@@ -193,7 +230,7 @@ int main(int argc, char *argv[]) {
     w.x += 130;
     w.y += 120.0f;
     plx_fcxt_setpos_pnt(cxt, &w);
-    plx_fcxt_setsize(cxt, 30.0f);
+    // plx_fcxt_setsize(cxt, 30.0f);
     plx_fcxt_draw(cxt, "0x");
 
     w.x += 48.0f;
@@ -214,61 +251,60 @@ int main(int argc, char *argv[]) {
     state = (cont_state_t *)maple_dev_status(contdev);
 
     /* Make sure we can rely on the state, otherwise loop. */
-    if (state == NULL)
-      continue;
-
-    rel_buttons = (old_buttons ^ state->buttons);
-
-    if ((state->buttons & CONT_DPAD_LEFT) && (rel_buttons & CONT_DPAD_LEFT)) {
-      if (i > 0)
-        i--;
-    }
-
-    if ((state->buttons & CONT_DPAD_RIGHT) && (rel_buttons & CONT_DPAD_RIGHT)) {
-      if (i < 7)
-        i++;
-    }
-
-    if ((state->buttons & CONT_DPAD_UP) && (rel_buttons & CONT_DPAD_UP)) {
-      if (n[i] < 15)
-        n[i]++;
-    }
-
-    if ((state->buttons & CONT_DPAD_DOWN) && (rel_buttons & CONT_DPAD_DOWN)) {
-      if (n[i] > 0)
-        n[i]--;
-    }
-
-    if ((state->buttons & CONT_X) && (rel_buttons & CONT_X)) {
-      printf("Setting baked pattern:\n\t'%s'\n",
-             catalog[catalog_index].description);
-      word2hexbytes(catalog[catalog_index].pattern, n);
-      catalog_index++;
-      if (catalog_index >= sizeof(catalog) / sizeof(baked_pattern_t)) {
-        catalog_index = 0;
+    if (state != NULL) {
+      rel_buttons = (old_buttons ^ state->buttons);
+  
+      if ((state->buttons & CONT_DPAD_LEFT) && (rel_buttons & CONT_DPAD_LEFT)) {
+        if (i > 0)
+          i--;
       }
+  
+      if ((state->buttons & CONT_DPAD_RIGHT) && (rel_buttons & CONT_DPAD_RIGHT)) {
+        if (i < 7)
+          i++;
+      }
+  
+      if ((state->buttons & CONT_DPAD_UP) && (rel_buttons & CONT_DPAD_UP)) {
+        if (n[i] < 15)
+          n[i]++;
+      }
+  
+      if ((state->buttons & CONT_DPAD_DOWN) && (rel_buttons & CONT_DPAD_DOWN)) {
+        if (n[i] > 0)
+          n[i]--;
+      }
+  
+      if ((state->buttons & CONT_X) && (rel_buttons & CONT_X)) {
+        printf("Setting baked pattern:\n\t'%s'\n",
+               catalog[catalog_index].description);
+        word2hexbytes(catalog[catalog_index].pattern, n);
+        catalog_index++;
+        if (catalog_index >= sizeof(catalog) / sizeof(baked_pattern_t)) {
+          catalog_index = 0;
+        }
+      }
+  
+      if ((state->buttons & CONT_A) && (rel_buttons & CONT_A)) {
+        effect = (n[0] << 28) + (n[1] << 24) + (n[2] << 20) + (n[3] << 16) +
+                 (n[4] << 12) + (n[5] << 8) + (n[6] << 4) + (n[7] << 0);
+  
+        purupuru_rumble_raw(purudev, effect);
+        /* We print these out to make it easier to track the options chosen */
+        printf("Rumble: 0x%lx!\n", effect);
+        print_rumble_fields(effect);
+        print_purupuru_cmd((purupuru_cmd_t *)&effect);
+      }
+  
+      if ((state->buttons & CONT_B) && (rel_buttons & CONT_B)) {
+        purupuru_rumble_raw(purudev, 0x00000000);
+        printf("Rumble Stopped!\n");
+      }
+  
+      old_buttons = state->buttons;
+
     }
-
-    if ((state->buttons & CONT_A) && (rel_buttons & CONT_A)) {
-      effect = (n[0] << 28) + (n[1] << 24) + (n[2] << 20) + (n[3] << 16) +
-               (n[4] << 12) + (n[5] << 8) + (n[6] << 4) + (n[7] << 0);
-
-      purupuru_rumble_raw(purudev, effect);
-      /* We print these out to make it easier to track the options chosen */
-      printf("Rumble: 0x%lx!\n", effect);
-      print_rumble_fields(effect);
-      print_purupuru_cmd((purupuru_cmd_t *)&effect);
-    }
-
-    if ((state->buttons & CONT_B) && (rel_buttons & CONT_B)) {
-      purupuru_rumble_raw(purudev, 0x00000000);
-      printf("Rumble Stopped!\n");
-    }
-
-    old_buttons = state->buttons;
-
     /* Draw the bottom half of the screen and finish it up. */
-    plx_fcxt_setsize(cxt, 24.0f);
+    // plx_fcxt_setsize(cxt, 24.0f);
     plx_fcxt_setcolor4f(cxt, 1.0f, 1.0f, 1.0f, 1.0f);
     w.x = 65.0f;
     w.y += 50.0f;
