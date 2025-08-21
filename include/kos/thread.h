@@ -35,13 +35,13 @@
 #ifndef __KOS_THREAD_H
 #define __KOS_THREAD_H
 
-#include <sys/cdefs.h>
+#include <kos/cdefs.h>
 __BEGIN_DECLS
 
 #include <kos/cdefs.h>
 #include <kos/tls.h>
 #include <arch/irq.h>
-#include <arch/types.h>
+
 #include <sys/queue.h>
 #include <sys/reent.h>
 
