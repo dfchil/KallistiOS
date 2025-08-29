@@ -42,15 +42,8 @@ int purupuru_rumble_raw(maple_device_t *dev, uint32_t effect) {
 int purupuru_rumble(maple_device_t *dev, const purupuru_effect_t *effect) {
 
     /* Error checking to prevent hardware-level errors */
-    if(!effect->motor) {
-        dbglog(DBG_WARNING, "puru: invalid rumble effect sent. motor must be nonzero.\n");
-        return MAPLE_EINVALID;
-    }
-
-    if(effect->conv && effect->div) {
-        dbglog(DBG_WARNING, "puru: invalid rumble effect sent. Divergent and Convergent rumble cannot be set together.\n");
-        return MAPLE_EINVALID;
-    }
+    assert(effect->motor); /* motor must be nonzero */
+    assert(!(effect->conv & effect->div)); /* cannot have both convergent and divergent */
 
     return purupuru_rumble_raw(dev, effect->raw);
 }
