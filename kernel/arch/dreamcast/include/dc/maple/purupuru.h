@@ -68,25 +68,24 @@ typedef union purupuru_effect  {
     };
     struct {
         /** \brief Continuous Vibration. When set vibration will continue until stopped */
-        uint32_t cont    : 1;
+        bool    cont    : 1;
         /** \brief Reserved. Always 0s */
-        uint32_t res     : 3;
+        uint8_t res     : 3;
         /** \brief Motor number. 0 will cause an error. 1 is the typical setting. */
-        uint32_t motor   : 4;
+        uint8_t motor   : 4;
 
         /** \brief Backward direction (- direction) intensity setting bits. 0 stops vibration. */
-        uint32_t bpow    : 3;
+        uint8_t bpow    : 3;
         /** \brief Divergent vibration. The rumble will get stronger until it stops. */
-        uint32_t div     : 1;
+        bool    div     : 1;
         /** \brief Forward direction (+ direction) intensity setting bits. 0 stops vibration. */
-        uint32_t fpow    : 3;
+        uint8_t fpow    : 3;
         /** \brief Convergent vibration. The rumble will get weaker until it stops. */
-        uint32_t conv    : 1;
-
+        bool    conv    : 1;
         /** \brief Vibration frequency. for most purupuru 4-59. */
-        uint32_t freq    : 8;
+        uint8_t freq;
         /** \brief Vibration inclination period. */
-        uint32_t inc     : 8;
+        uint8_t inc;
     };
 } purupuru_effect_t;
 

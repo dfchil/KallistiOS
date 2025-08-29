@@ -246,7 +246,7 @@ void maple_dma_irq_hnd(uint32 code, void *data) {
     int8        resp;
     uint32 gun;
 
-    (void)code;
+    (void)code; 
 
     /* dbgio_write_str("start dma_irq_hnd\n"); */
 
@@ -278,8 +278,22 @@ void maple_dma_irq_hnd(uint32 code, void *data) {
         /* This error is generated in the case where bad input is sent to the purupuru.
            For instance, when setting motor selection to '0' rather than '1'. */
         else if(resp == MAPLE_RESPONSE_BADFUNC) {
-            dbglog(DBG_ERROR, "maple_irq: error EBADFUNC on %c%i when sending command: %i\n",
-            ('A' - i->dst_port), i->dst_unit, i->cmd);
+
+            unsigned char cmdbits[9*4] = {0};
+            if (i->send_buf) {
+                uint32_t send_buf = *((uint32_t *)i->send_buf);
+
+                for (int bidx = 0; bidx < 4; bidx++) {
+                    for (int j = 0; j < 8; j++) {
+                        cmdbits[(3 - bidx) * 9 + (7-j)] = '0'+ ((send_buf >> (bidx * 8 + j)) & 1);
+                    }
+                    cmdbits[(3 - bidx) * 9 + 8] = ':';
+                }
+                cmdbits[9*4 - 1] = 0;
+            }
+            dbglog(DBG_ERROR, "maple_irq: error EBADFUNC on %c%i when sending command: %s\n",
+            ('A' - i->dst_port), i->dst_unit, cmdbits);
+
         }
 
         if(__is_defined(MAPLE_DMA_DEBUG))
