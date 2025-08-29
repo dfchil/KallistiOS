@@ -10,7 +10,7 @@
 #ifndef _SYS__TYPES_H
 #define _SYS__TYPES_H
 
-#include <kos/cdefs.h>
+#include <sys/cdefs.h>
 __BEGIN_DECLS
 
 #include <sys/lock.h>

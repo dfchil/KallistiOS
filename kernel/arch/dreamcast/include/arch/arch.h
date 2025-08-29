@@ -79,18 +79,6 @@ extern char _etext;
 static const
 unsigned HZ __depr("Please use the new THD_SCHED_HZ macro.") = THD_SCHED_HZ;
 
-/** \brief  Default video mode. */
-#define DEFAULT_VID_MODE    DM_640x480
-
-/** \brief  Default pixel mode for video. */
-#define DEFAULT_PIXEL_MODE  PM_RGB565
-
-/** \brief  Default serial bitrate. */
-#define DEFAULT_SERIAL_BAUD 115200
-
-/** \brief  Default serial FIFO behavior. */
-#define DEFAULT_SERIAL_FIFO 1
-
 /** \brief  Global symbol prefix in ELF files. */
 #define ELF_SYM_PREFIX      "_"
 

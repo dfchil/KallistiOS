@@ -20,7 +20,7 @@
 #ifndef __SYS_SELECT_H
 #define __SYS_SELECT_H
 
-#include <kos/cdefs.h>
+#include <sys/cdefs.h>
 #include <sys/types.h>
 
 __BEGIN_DECLS
