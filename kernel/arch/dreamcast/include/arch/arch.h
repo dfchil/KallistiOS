@@ -76,8 +76,8 @@ extern char _etext;
  *  \deprecated
  *  \sa THD_SCHED_HZ
  */
-static const
-unsigned HZ __depr("Please use the new THD_SCHED_HZ macro.") = THD_SCHED_HZ;
+// static const
+// unsigned HZ __depr("Please use the new THD_SCHED_HZ macro.") = THD_SCHED_HZ;
 
 /** \brief  Global symbol prefix in ELF files. */
 #define ELF_SYM_PREFIX      "_"
