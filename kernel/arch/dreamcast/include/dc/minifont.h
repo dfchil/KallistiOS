@@ -63,6 +63,12 @@ int minifont_draw(uint16 *buffer, uint32 bufwidth, uint32 c);
 */
 int minifont_draw_str(uint16 *b, uint32 bufwidth, const char *str);
 
+
+/** \brief  Set the color for the mini font.
+    \param  color  The color to set (in 16-bit RGB565 format).
+*/
+void minifont_set_color(uint8 r, uint8 g, uint8 b);
+
 /** @} */
 
 __END_DECLS

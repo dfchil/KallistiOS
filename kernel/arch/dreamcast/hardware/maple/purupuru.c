@@ -42,9 +42,9 @@ int purupuru_rumble_raw(maple_device_t *dev, uint32_t effect) {
 int purupuru_rumble(maple_device_t *dev, const purupuru_effect_t *effect) {
 
     /* Error checking to prevent hardware-level errors */
-    assert(effect->motor); /* motor must be nonzero */
-    assert(!(effect->conv & effect->div)); /* cannot have both convergent and divergent */
-    assert(!effect->res); /* reserved must be zero */
+    // assert(effect->motor); /* motor must be nonzero */
+    // assert(!(effect->conv & effect->div)); /* cannot have both convergent and divergent */
+    // assert(!effect->res); /* reserved must be zero */
 
     /* Error checking to prevent hardware-level errors */
     if(!effect->motor) {
@@ -60,12 +60,10 @@ int purupuru_rumble(maple_device_t *dev, const purupuru_effect_t *effect) {
         dbglog(DBG_WARNING, "puru: invalid rumble effect sent. Reserved bits must be zero.\n");
         return MAPLE_EINVALID;
     }
-
-    if (effect->freq < 4 || effect->freq > 59) {
-        dbglog(DBG_WARNING, "puru: invalid rumble effect sent. Frequency must be between 4 and 59.\n");
-        return MAPLE_EINVALID;
-    }
-
+    // if (effect->freq < 4 || effect->freq > 59) {
+    //     dbglog(DBG_WARNING, "puru: invalid rumble effect sent. Frequency must be between 4 and 59.\n");
+    //     return MAPLE_EINVALID;
+    // }
 
     return purupuru_rumble_raw(dev, effect->raw);
 }

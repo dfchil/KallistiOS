@@ -70,15 +70,15 @@ typedef union purupuru_effect  {
         /** \brief Continuous Vibration. When set vibration will continue until stopped */
         bool    cont    : 1;
         /** \brief Reserved. Always 0s */
-        uint32_t res     : 3;
+        uint32_t res    : 3;
         /** \brief Motor number. 0 will cause an error. 1 is the typical setting. 4-bits. */
-        uint32_t motor   : 4;
+        uint32_t motor  : 4;
         /** \brief Backward direction (- direction) intensity setting bits. 0 stops vibration. 3-bits. */
-        uint32_t bpow    : 3;
+        uint32_t bpow   : 3;
         /** \brief Divergent vibration. The rumble will get stronger until it stops. */
         bool    div     : 1;
         /** \brief Forward direction (+ direction) intensity setting bits. 0 stops vibration. 3-bits. */
-        uint32_t fpow    : 3;
+        uint32_t fpow   : 3;
         /** \brief Convergent vibration. The rumble will get weaker until it stops. */
         bool    conv    : 1;
         /** \brief Vibration frequency. for most purupuru the range is 4-59. */
