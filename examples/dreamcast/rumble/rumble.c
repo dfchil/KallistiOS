@@ -1,6 +1,9 @@
 /*  KallistiOS ##version##
     rumble.c
-    Copyright (C) 2025 Daniel Fairchild
+    rumble.c
+    Copyright (C) 2004 SinisterTengu
+    Copyright (C) 2008, 2023 Donald Haase
+    Copyright (C) 2024, 2025 Daniel Fairchild
 */
 
 /*
