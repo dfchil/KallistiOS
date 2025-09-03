@@ -81,7 +81,7 @@ typedef union purupuru_effect  {
         uint32_t fpow   : 3;
         /** \brief Convergent vibration. The rumble will get weaker until it stops. */
         bool    conv    : 1;
-        /** \brief Vibration frequency. for most purupuru the range is 4-59. */
+        /** \brief Vibration frequency. For most purupuru the range is 4-59. */
         uint8_t freq;
         /** \brief Vibration inclination period. */
         uint8_t inc;

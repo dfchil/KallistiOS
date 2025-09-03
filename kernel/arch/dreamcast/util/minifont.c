@@ -18,7 +18,7 @@
 static uint16 textcolor = 0xFFFF;
 
 void minifont_set_color(uint8 r, uint8 g, uint8 b) {
-    textcolor = ((r & 0x1F) << 11) | ((g & 0x3F) << 5) | (b & 0x1F);
+    textcolor = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b & 0xF8) >> 3;
 }
 
 int minifont_draw(uint16 *buffer, uint32 bufwidth, uint32 c) {
