@@ -158,7 +158,7 @@ void redraw_screen() {
   xpos += 105;
 
   char sb[9] = {0};
-  sprintf(sb, "%08x", effect.raw);
+  sprintf(sb, "0x%lx", effect.raw);
   minifont_draw_str(vram_s + (640 * ypos) + xpos, 640, sb);
 
   /* Draw the bottom half of the screen and finish it up. */
