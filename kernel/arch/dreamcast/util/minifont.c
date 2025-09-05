@@ -9,7 +9,6 @@
 #include "minifont.h"
 #include <dc/minifont.h>
 #include <string.h>
-#include <stdio.h>
 
 #define CHAR_WIDTH 8
 #define CHAR_HEIGHT 16
