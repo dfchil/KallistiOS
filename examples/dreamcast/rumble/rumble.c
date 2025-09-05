@@ -243,7 +243,7 @@ void redraw_screen() {
   }
 
   if (loaded_pattern >= 0) {
-    textpos_y += 32;
+    textpos_y = 200;
     textpos_x = 10;
     minifont_draw_str(vram_s + (640 * textpos_y) + textpos_x, 640,
                       "Currently loaded baked pattern:");
