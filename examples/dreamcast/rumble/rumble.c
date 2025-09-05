@@ -153,11 +153,11 @@ void redraw_screen() {
   textpos_y += 20;
   textpos_x = 10;
   minifont_set_color(255, 0, 255); /* Magenta */
-  minifont_draw_str(vram_s + (640 * textpos_y) + textpos_x, 640, "hex value: 0x");
-  textpos_x += 105;
+  minifont_draw_str(vram_s + (640 * textpos_y) + textpos_x, 640, "hex value:");
+  textpos_x += 85;
 
-  char sb[9] = {0};
-  sprintf(sb, "0x%lx", effect.raw);
+  char sb[11] = {0};
+  sprintf(sb, "0x%08lx", effect.raw);
   minifont_draw_str(vram_s + (640 * textpos_y) + textpos_x, 640, sb);
 
   /* Draw the bottom half of the screen and finish it up. */
