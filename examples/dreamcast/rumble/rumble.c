@@ -123,19 +123,19 @@ void redraw_screen() {
   textpos_y += 16;
   for (int i = 0; i < num_fields; i++) {
     if (cursor_pos == i)
-      minifont_set_color(255, 255, 0); /* Yellow */
+      minifont_set_color(255, 0, 0); /* Red */
     else
       minifont_set_color(255, 255, 255); /* White */
     snprintf(str_buffer, STRBUFSIZE, " %u ", offset2field(i));
     minifont_draw_str(vram_s + (640 * textpos_y) + (textpos_x + (60 * i)), 640, str_buffer);
   }
   textpos_y += 20; textpos_x = 10;
-  minifont_set_color(255, 0, 255); /* Magenta */
   minifont_draw_str(vram_s + (640 * textpos_y) + textpos_x, 640, "effect hex value:");
-  textpos_x += 85;
+  minifont_set_color(255, 0, 255); /* Magenta */
   snprintf(str_buffer, STRBUFSIZE,"0x%08lx", effect.raw);
-  minifont_draw_str(vram_s + (640 * textpos_y) + textpos_x, 640, str_buffer);
-  textpos_x = 10; textpos_y += 32;
+  minifont_draw_str(vram_s + (640 * textpos_y) + textpos_x + 145, 640, str_buffer);
+  textpos_y += 32;
+  minifont_set_color(255, 255, 255); /* White */
   minifont_draw_str(vram_s + (640 * textpos_y) + textpos_x, 640, "Field description:");
   minifont_set_color(255, 0, 0); /* RED */
   minifont_draw_str(vram_s + (640 * textpos_y) + textpos_x + 160, 640, "[");
