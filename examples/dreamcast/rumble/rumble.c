@@ -67,20 +67,6 @@ static int cursor_pos = 0;
 static size_t catalog_index = 0;
 static int loaded_pattern = -1;
 
-void print_rumble_fields(purupuru_effect_t fields) {
-    printf("Rumble Fields:\n");
-    printf("  .cont   =  %s,\n", fields.cont ? "true" : "false");
-    printf("  .motor  =  %u,\n", fields.motor);
-
-    printf("  .bpow   =  %u,\n", fields.bpow);
-    printf("  .fpow   =  %u,\n", fields.fpow);
-    printf("  .div    =  %s,\n", fields.div ? "true" : "false");
-    printf("  .conv   =  %s,\n", fields.conv ? "true" : "false");
-
-    printf("  .freq   =  %u,\n", fields.freq);
-    printf("  .inc    =  %u,\n", fields.inc);
-}
-
 static inline uint8_t offset2field(int offset) {
     switch (offset) {
         case 0:
