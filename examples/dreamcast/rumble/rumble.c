@@ -39,17 +39,17 @@ plx_fcxt_t *cxt;
 
 void print_rumble_fields(purupuru_effect_t fields) {
 
-  printf("Rumble Fields:\n");
-  printf("  .cont   =  %s,\n", fields.cont ? "true" : "false");
-  printf("  .motor  =  %u,\n", fields.motor);
+    printf("Rumble Fields:\n");
+    printf("  .cont   =  %s,\n", fields.cont ? "true" : "false");
+    printf("  .motor  =  %u,\n", fields.motor);
 
-  printf("  .bpow   =  %u,\n", fields.bpow);
-  printf("  .fpow   =  %u,\n", fields.fpow);
-  printf("  .div    =  %s,\n", fields.div ? "true" : "false");
-  printf("  .conv   =  %s,\n", fields.conv ? "true" : "false");
+    printf("  .bpow   =  %u,\n", fields.bpow);
+    printf("  .fpow   =  %u,\n", fields.fpow);
+    printf("  .div    =  %s,\n", fields.div ? "true" : "false");
+    printf("  .conv   =  %s,\n", fields.conv ? "true" : "false");
 
-  printf("  .freq   =  %u,\n", fields.freq);
-  printf("  .inc    =  %u,\n", fields.inc);
+    printf("  .freq   =  %u,\n", fields.freq);
+    printf("  .inc    =  %u,\n", fields.inc);
 }
 /* This blocks waiting for a specified device to be present and valid */
 void wait_for_dev_attach(maple_device_t **dev_ptr, unsigned int func) {
@@ -70,10 +70,12 @@ void wait_for_dev_attach(maple_device_t **dev_ptr, unsigned int func) {
 
     plx_fcxt_begin(cxt);
     plx_fcxt_setpos_pnt(cxt, &w);
+
     if(func == MAPLE_FUNC_CONTROLLER)
         plx_fcxt_draw(cxt, "Please attach a controller!");
     else if(func == MAPLE_FUNC_PURUPURU)
         plx_fcxt_draw(cxt, "Please attach a rumbler!");
+
     plx_fcxt_end(cxt);
 
     pvr_scene_finish();
@@ -88,8 +90,8 @@ void wait_for_dev_attach(maple_device_t **dev_ptr, unsigned int func) {
 
 
 typedef struct {
-  purupuru_effect_t effect;
-  const char *description;
+    purupuru_effect_t effect;
+    const char *description;
 } baked_pattern_t;
 
 /* motor cannot be 0 (will generate error on official hardware), but we can set everything else to 0 for stopping */
@@ -106,9 +108,9 @@ static const baked_pattern_t catalog[] = {
 };
 
 static inline void word2hexbytes(uint32_t word, uint8_t *bytes) {
-  for (int i = 0; i < 8; i++) {
-    bytes[i] = (word >> (28 - (i * 4))) & 0xf;
-  }
+    for (int i = 0; i < 8; i++) {
+        bytes[i] = (word >> (28 - (i * 4))) & 0xf;
+    }
 }
 
 int main(int argc, char *argv[]) {
@@ -147,12 +149,15 @@ int main(int argc, char *argv[]) {
         pvr_list_begin(PVR_LIST_TR_POLY);
         plx_fcxt_begin(cxt);
 
-        w.x = 70.0f; w.y = 70.0f; w.z = 10.0f;
+        w.x = 70.0f;
+        w.y = 70.0f;
+        w.z = 10.0f;
         plx_fcxt_setpos_pnt(cxt, &w);
         plx_fcxt_draw(cxt, "Rumble Test by Quzar");
 
         /* Start drawing the changeable section of the screen */
-        w.x += 130; w.y += 120.0f;
+        w.x += 130;
+        w.y += 120.0f;
         plx_fcxt_setpos_pnt(cxt, &w);
         plx_fcxt_setsize(cxt, 30.0f);
         plx_fcxt_draw(cxt, "0x");
@@ -200,6 +205,7 @@ int main(int argc, char *argv[]) {
             printf("Setting baked effect:\n\t'%s'\n", catalog[catalog_index].description);
             word2hexbytes(catalog[catalog_index].effect.raw, n);
             catalog_index++;
+
             if (catalog_index >= sizeof(catalog) / sizeof(baked_pattern_t)) {
                 catalog_index = 0;
             }
@@ -208,7 +214,7 @@ int main(int argc, char *argv[]) {
 
         if((state->buttons & CONT_A) && (rel_buttons & CONT_A)) {
             effect.raw = (n[0] << 28) + (n[1] << 24) + (n[2] << 20) + (n[3] << 16) +
-                     (n[4] << 12) + (n[5] << 8) + (n[6] << 4) + (n[7] << 0);
+                         (n[4] << 12) + (n[5] << 8) + (n[6] << 4) + (n[7] << 0);
 
             purupuru_rumble(purudev, &effect);
             /* We print these out to make it easier to track the options chosen */
@@ -226,7 +232,8 @@ int main(int argc, char *argv[]) {
         /* Draw the bottom half of the screen and finish it up. */
         plx_fcxt_setsize(cxt, 24.0f);
         plx_fcxt_setcolor4f(cxt, 1.0f, 1.0f, 1.0f, 1.0f);
-        w.x = 65.0f; w.y += 50.0f;
+        w.x = 65.0f;
+        w.y += 50.0f;
 
         plx_fcxt_setpos_pnt(cxt, &w);
         plx_fcxt_draw(cxt, "Press left/right to switch digits.");
