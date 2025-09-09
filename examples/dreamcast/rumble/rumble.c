@@ -3,7 +3,7 @@
     rumble.c
     Copyright (C) 2004 SinisterTengu
     Copyright (C) 2008, 2023, 2025 Donald Haase
-    Copyright (C) 2024 Daniel Fairchild
+    Copyright (C) 2024, 2025 Daniel Fairchild
 
 */
 
@@ -26,14 +26,17 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <unistd.h>
+
 #include <kos/init.h>
+
 #include <dc/maple.h>
 #include <dc/maple/controller.h>
 #include <dc/maple/purupuru.h>
-#include <plx/font.h>
+
+#include <dc/minifont.h>
+#include <dc/video.h>
 
 KOS_INIT_FLAGS(INIT_DEFAULT);
-
 
 typedef struct {
     purupuru_effect_t effect;
@@ -49,17 +52,27 @@ static const baked_pattern_t catalog[] = {
     {.effect = {.cont = false, .motor = 1, .fpow = 2, .freq =  7, .inc = 0}, .description = "Ship's Thrust (as in AAC)"},
 };
 
-
 /* motor cannot be 0 (will generate error on official hardware), but we can set
  * everything else to 0 for stopping */
 static const purupuru_effect_t rumble_stop = {.motor = 1};
 static purupuru_effect_t effect = rumble_stop;
 
-static plx_fcxt_t *cxt;
-static plx_font_t *fnt;
 static uint8_t n[8];
 static int cursor_pos = 0;
 static size_t catalog_index = 0;
+
+static inline void word2hexbytes(uint32_t word, uint8_t *bytes) {
+    for (int i = 0; i < 8; i++) {
+        bytes[i] = (word >> (28 - (i * 4))) & 0xf;
+    }
+}
+static inline void hexbytes2word(const uint8_t *bytes, uint32_t *word) {
+    *word = 0;
+
+    for (int i = 0; i < 8; i++) {
+        *word |= (bytes[i] & 0xf) << (28 - (i * 4));
+    }
+}
 
 
 void print_rumble_fields(purupuru_effect_t fields) {
@@ -77,79 +90,49 @@ void print_rumble_fields(purupuru_effect_t fields) {
 }
 
 void redraw_screen() {
-    point_t w;
-    char s[8][2] = {"", "", "", "", "", "", "", ""};
+#define STRBUFSIZE 64
+    char str_buffer[STRBUFSIZE];
+    int textpos_x = 128, textpos_y = 32;
 
     /* Start drawing and draw the header */
-    pvr_wait_ready();
-    pvr_scene_begin();
-    pvr_list_begin(PVR_LIST_OP_POLY);
-    pvr_list_begin(PVR_LIST_TR_POLY);
-    plx_fcxt_begin(cxt);
+    vid_clear(0, 0, 0);
+    minifont_set_color(0xff, 0xc0, 0x10); /* gold */
+    minifont_draw_str(vram_s + (640 * textpos_y) + textpos_x, 640,
+                      "Rumble Accessory Tester");
 
-    w.x = 70.0f;
-    w.y = 70.0f;
-    w.z = 10.0f;
-    plx_fcxt_setpos_pnt(cxt, &w);
-    plx_fcxt_draw(cxt, "Rumble Test by Quzar");
-
-    /* Start drawing the changeable section of the screen */
-    w.x += 130;
-    w.y += 120.0f;
-    plx_fcxt_setpos_pnt(cxt, &w);
-    plx_fcxt_setsize(cxt, 30.0f);
-    plx_fcxt_draw(cxt, "0x");
-
-    w.x += 48.0f;
-    plx_fcxt_setpos_pnt(cxt, &w);
-
-    for (int count = 0; count <= 7; count++, w.x += 25.0f) {
-        if (cursor_pos == count)
-            plx_fcxt_setcolor4f(cxt, 1.0f, 0.9f, 0.9f, 0.0f);
-        else
-            plx_fcxt_setcolor4f(cxt, 1.0f, 1.0f, 1.0f, 1.0f);
-
-        sprintf(s[count], "%x", n[count]);
-
-        plx_fcxt_draw(cxt, s[count]);
-    }
+    textpos_y += 20;
+    textpos_x = 10;
+    minifont_draw_str(vram_s + (640 * textpos_y) + textpos_x, 640,
+                      "effect hex value:");
+    minifont_set_color(255, 0, 255); /* Magenta */
+    snprintf(str_buffer, STRBUFSIZE, "0x%08lx", effect.raw);
+    minifont_draw_str(vram_s + (640 * textpos_y) + textpos_x + 145, 640,
+                      str_buffer);
 
     /* Draw the bottom half of the screen and finish it up. */
-    plx_fcxt_setsize(cxt, 24.0f);
-    plx_fcxt_setcolor4f(cxt, 1.0f, 1.0f, 1.0f, 1.0f);
-    w.x = 65.0f;
-    w.y += 50.0f;
+    textpos_y = 360;
+    textpos_x = 10;
+    minifont_set_color(255, 255, 255); /* White */
+    const char *instructions[] = {"Press left/right to switch field.",
+                                  "Press up/down to change values.",
+                                  "Press A to send effect to rumblepack.",
+                                  "Press B to stop rumble.",
+                                  "Press X for next baked pattern",
+                                  "Press Start to quit."
+                                 };
 
-    plx_fcxt_setpos_pnt(cxt, &w);
-    plx_fcxt_draw(cxt, "Press left/right to switch digits.");
-    w.y += 25.0f;
+    for (size_t i = 0; i < sizeof(instructions) / sizeof(instructions[0]);
+         i++) {
+        minifont_draw_str(vram_s + (640 * textpos_y) + textpos_x, 640,
+                          instructions[i]);
+        textpos_y += 16;
+    }
 
-    plx_fcxt_setpos_pnt(cxt, &w);
-    plx_fcxt_draw(cxt, "Press up/down to change values.");
-    w.y += 25.0f;
-
-    plx_fcxt_setpos_pnt(cxt, &w);
-    plx_fcxt_draw(cxt, "Press A to start rumblin.");
-    w.y += 25.0f;
-
-    plx_fcxt_setpos_pnt(cxt, &w);
-    plx_fcxt_draw(cxt, "Press B to stop rumblin.");
-    w.y += 25.0f;
-
-    plx_fcxt_setpos_pnt(cxt, &w);
-    plx_fcxt_draw(cxt, "Press X for next baked pattern");
-    w.y += 25.0f;
-
-    plx_fcxt_setpos_pnt(cxt, &w);
-    plx_fcxt_draw(cxt, "Press Start to quit.");
-
-    plx_fcxt_end(cxt);
-    pvr_scene_finish();
+    vid_flip(-1);
 }
 
 /* This blocks waiting for a specified device to be present and valid */
 void wait_for_dev_attach(maple_device_t **dev_ptr, unsigned int func) {
-    const point_t w = {40.0f, 200.0f, 10.0f, 0.0f};
     maple_device_t *dev = NULL;
 
     do {
@@ -167,37 +150,27 @@ void wait_for_dev_attach(maple_device_t **dev_ptr, unsigned int func) {
     while((dev == NULL) || !dev->valid);
 
     /* Draw up a screen */
-    pvr_wait_ready();
-    pvr_scene_begin();
-    pvr_list_begin(PVR_LIST_OP_POLY);
-    pvr_list_begin(PVR_LIST_TR_POLY);
+    vid_clear(0, 0, 0);
+    int textpos_x = 40, textpos_y = 200;
 
-    plx_fcxt_begin(cxt);
-    plx_fcxt_setpos_pnt(cxt, &w);
-
-    switch(func) {
+    switch (func) {
         case MAPLE_FUNC_CONTROLLER:
-            plx_fcxt_draw(cxt, "Please attach a controller!");
+            minifont_draw_str(vram_s + (640 * textpos_y) + textpos_x, 640,
+                              "Please attach a controller to port A!");
             break;
 
         case MAPLE_FUNC_PURUPURU:
-            plx_fcxt_draw(cxt,
-                          "Please attach a rumbler to controller in port A!");
+            minifont_draw_str(
+                vram_s + (640 * textpos_y) + textpos_x, 640,
+                "Please attach a rumbler to controller in port A!");
 
         default:
             break;
     }
 
-    plx_fcxt_end(cxt);
-    pvr_scene_finish();
+    vid_flip(-1);
 }
 
-
-static inline void word2hexbytes(uint32_t word, uint8_t *bytes) {
-    for (int i = 0; i < 8; i++) {
-        bytes[i] = (word >> (28 - (i * 4))) & 0xf;
-    }
-}
 
 int main(int argc, char *argv[]) {
     cont_state_t *state;
@@ -206,13 +179,7 @@ int main(int argc, char *argv[]) {
     uint16_t old_buttons = 0, rel_buttons = 0;
 
     word2hexbytes(effect.raw, n);
-
-    pvr_init_defaults();
-
-    fnt = plx_font_load("/rd/axaxax.txf");
-    cxt = plx_fcxt_create(fnt, PVR_LIST_TR_POLY);
-
-    pvr_set_bg_color(0.0f, 0.0f, 0.0f);
+    vid_set_mode(DM_640x480 | DM_MULTIBUFFER, PM_RGB565);
 
     /* Loop until Start is pressed */
     while (!(rel_buttons & CONT_START)) {
@@ -261,10 +228,6 @@ int main(int argc, char *argv[]) {
 
 
         if ((state->buttons & CONT_A) && (rel_buttons & CONT_A)) {
-            effect.raw = (n[0] << 28) + (n[1] << 24) + (n[2] << 20) +
-                         (n[3] << 16) + (n[4] << 12) + (n[5] << 8) +
-                         (n[6] << 4) + (n[7] << 0);
-
             purupuru_rumble(purudev, &effect);
             /* We print these out to make it easier to track the options chosen
              */
@@ -278,44 +241,13 @@ int main(int argc, char *argv[]) {
         }
 
         old_buttons = state->buttons;
-
-        /* Draw the bottom half of the screen and finish it up. */
-        plx_fcxt_setsize(cxt, 24.0f);
-        plx_fcxt_setcolor4f(cxt, 1.0f, 1.0f, 1.0f, 1.0f);
-        w.x = 65.0f;
-        w.y += 50.0f;
-
-        plx_fcxt_setpos_pnt(cxt, &w);
-        plx_fcxt_draw(cxt, "Press left/right to switch digits.");
-        w.y += 25.0f;
-
-        plx_fcxt_setpos_pnt(cxt, &w);
-        plx_fcxt_draw(cxt, "Press up/down to change values.");
-        w.y += 25.0f;
-
-        plx_fcxt_setpos_pnt(cxt, &w);
-        plx_fcxt_draw(cxt, "Press A to start rumblin.");
-        w.y += 25.0f;
-
-        plx_fcxt_setpos_pnt(cxt, &w);
-        plx_fcxt_draw(cxt, "Press B to stop rumblin.");
-        w.y += 25.0f;
-
-        plx_fcxt_setpos_pnt(cxt, &w);
-        plx_fcxt_draw(cxt, "Press X for next baked pattern");
-        w.y += 25.0f;
-
-        plx_fcxt_setpos_pnt(cxt, &w);
-        plx_fcxt_draw(cxt, "Press Start to quit.");
-
-        plx_fcxt_end(cxt);
-        pvr_scene_finish();
+        hexbytes2word(n, &effect.raw);
+        redraw_screen();
     }
 
     /* Stop rumbling before exiting, if it still exists. */
     if ((purudev != NULL) && purudev->valid)
         purupuru_rumble(purudev, &rumble_stop);
 
-    old_buttons = state->buttons;
-    redraw_screen();
+    return 0;
 }
