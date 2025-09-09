@@ -24,6 +24,7 @@
  */
 
 #include <stdio.h>
+#include <string.h>
 #include <stdint.h>
 #include <unistd.h>
 
@@ -51,7 +52,6 @@ static const baked_pattern_t catalog[] = {
     {.effect = {.cont = true,  .motor = 1, .fpow = 1, .freq =  40, .inc = 5}, .description = "Helicopter"},
     {.effect = {.cont = false, .motor = 1, .fpow = 2, .freq =  7, .inc = 0}, .description = "Ship's Thrust (as in AAC)"},
 };
-
 
 static const char *fieldnames[] = {"cont", "res",  "motor", "bpow", "div",
                                    "fpow", "conv", "freq",  "inc"
@@ -212,12 +212,67 @@ void redraw_screen() {
 
     textpos_y += 20;
     textpos_x = 10;
+    minifont_set_color(255, 255, 255); /* White */
     minifont_draw_str(vram_s + (640 * textpos_y) + textpos_x, 640,
                       "effect hex value:");
     minifont_set_color(255, 0, 255); /* Magenta */
     snprintf(str_buffer, STRBUFSIZE, "0x%08lx", effect.raw);
     minifont_draw_str(vram_s + (640 * textpos_y) + textpos_x + 145, 640,
                       str_buffer);
+
+    textpos_y += 32;
+    minifont_set_color(255, 255, 255); /* White */
+    minifont_draw_str(vram_s + (640 * textpos_y) + textpos_x, 640,
+                      "Field description:");
+    minifont_set_color(255, 0, 0); /* RED */
+    minifont_draw_str(vram_s + (640 * textpos_y) + textpos_x + 160, 640, "[");
+    minifont_draw_str(vram_s + (640 * textpos_y) + textpos_x + 160 + 8, 640,
+                      fieldnames[cursor_pos]);
+    minifont_draw_str(vram_s + (640 * textpos_y) + textpos_x +
+                      (strlen(fieldnames[cursor_pos]) + 1) * 8 + 160,
+                      640, "]");
+    textpos_y += 16;
+    textpos_x += 20;
+    minifont_set_color(255, 255, 255); /* White */
+    const char *field_descriptions[] = {
+        // note that each description is 2 lines, some empty
+        "Continuous Vibration. When set vibration will continue until stopped",
+        "",
+
+        "Reserved. Always 0s",
+        "also will not be shown.",
+
+        "Motor number. 0 will cause an error. 1 is the typical setting. "
+        "4-bits.",
+        "",
+
+        "Backward direction (- direction) intensity setting bits.",
+        "0 stops vibration. Exclusive with .fpow. Field is 3-bits.",
+
+        "Divergent vibration. Make the rumble stronger until it stops.",
+        "Exclusive with .conv.",
+
+        "Forward direction (+ direction) intensity setting bits.",
+        "0 stops vibration. Exclusive with .bpow. Field is 3-bits.",
+
+        "Convergent vibration. Make the rumble weaker until it stops.",
+        "Exclusive with .div.",
+
+        "Vibration frequency. For most purupuru the range is 4-59. Field is "
+        "8-bits.",
+        "",
+
+        "Vibration inclination period setting bits. Field is 8-bits.",
+        "",
+
+        "Setting .inc == 0 when .conv or .div are set results in error.",
+        ""
+    };
+    minifont_draw_str(vram_s + (640 * textpos_y) + textpos_x, 640,
+                      field_descriptions[cursor_pos * 2]);
+    textpos_y += 16;
+    minifont_draw_str(vram_s + (640 * textpos_y) + textpos_x, 640,
+                      field_descriptions[cursor_pos * 2 + 1]);
 
     if (loaded_pattern >= 0) {
         textpos_y = 200;
