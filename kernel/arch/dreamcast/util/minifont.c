@@ -6,19 +6,19 @@
 
 */
 
-#include "minifont.h"
 
-#include <dc/minifont.h>
 #include <string.h>
+#include <dc/minifont.h>
+#include "minifont.h"
 
 #define CHAR_WIDTH 8
 #define CHAR_HEIGHT 16
 
 #define BYTES_PER_CHAR ((CHAR_WIDTH / 8) * CHAR_HEIGHT)
 
-static uint16 textcolor = 0xFFFF;
+static uint16_t textcolor = 0xFFFF;
 
-void minifont_set_color(uint8 r, uint8 g, uint8 b) {
+void minifont_set_color(uint8_t r, uint8_t g, uint8_t b) {
     textcolor = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b & 0xF8) >> 3;
 }
 
@@ -36,8 +36,9 @@ int minifont_draw(uint16 *buffer, uint32 bufwidth, uint32 c) {
 
         for (j = 0; j < CHAR_WIDTH / 8; ++j) {
             byte = minifont_data[pos + (i * (CHAR_WIDTH / 8)) + j];
-            for (k = 0; k < 8; ++k) {
-                if (byte & (1 << (7 - k)))
+
+            for(k = 0; k < 8; ++k) {
+                if(byte & (1 << (7 - k)))
                     *cur++ = textcolor;
                 else
                     ++cur;

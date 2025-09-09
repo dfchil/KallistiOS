@@ -30,6 +30,7 @@
 __BEGIN_DECLS
 
 #include <arch/types.h>
+#include <stdint.h>
 
 /** \defgroup video_fonts_mini Mini
     \brief                     Extra mini-font provided for Dreamcast and NAOMI
@@ -68,9 +69,9 @@ int minifont_draw_str(uint16 *b, uint32 bufwidth, const char *str);
 /** \brief  Set the color for the mini font.
     \param  r               Red component (0-255)
     \param  g               Green component (0-255)
-    \param  b               Blue component (0-255)    
+    \param  b               Blue component (0-255)
 */
-void minifont_set_color(uint8 r, uint8 g, uint8 b);
+void minifont_set_color(uint8_t r, uint8_t g, uint8_t b);
 
 /** @} */
 
