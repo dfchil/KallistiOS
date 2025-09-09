@@ -52,28 +52,20 @@ static const baked_pattern_t catalog[] = {
     {.effect = {.cont = false, .motor = 1, .fpow = 2, .freq =  7, .inc = 0}, .description = "Ship's Thrust (as in AAC)"},
 };
 
+
+static const char *fieldnames[] = {"cont", "res",  "motor", "bpow", "div",
+                                   "fpow", "conv", "freq",  "inc"
+                                  };
+static const int num_fields = sizeof(fieldnames) / sizeof(fieldnames[0]);
+
 /* motor cannot be 0 (will generate error on official hardware), but we can set
  * everything else to 0 for stopping */
 static const purupuru_effect_t rumble_stop = {.motor = 1};
 static purupuru_effect_t effect = rumble_stop;
 
-static uint8_t n[8];
 static int cursor_pos = 0;
 static size_t catalog_index = 0;
-
-static inline void word2hexbytes(uint32_t word, uint8_t *bytes) {
-    for (int i = 0; i < 8; i++) {
-        bytes[i] = (word >> (28 - (i * 4))) & 0xf;
-    }
-}
-static inline void hexbytes2word(const uint8_t *bytes, uint32_t *word) {
-    *word = 0;
-
-    for (int i = 0; i < 8; i++) {
-        *word |= (bytes[i] & 0xf) << (28 - (i * 4));
-    }
-}
-
+static int loaded_pattern = -1;
 
 void print_rumble_fields(purupuru_effect_t fields) {
     printf("Rumble Fields:\n");
@@ -89,6 +81,102 @@ void print_rumble_fields(purupuru_effect_t fields) {
     printf("  .inc    =  %u,\n", fields.inc);
 }
 
+static inline uint8_t offset2field(int offset) {
+    switch (offset) {
+        case 0:
+            return effect.cont;  // cont
+
+        case 1:
+            return effect.res;  // res
+
+        case 2:
+            return effect.motor;  // motor
+
+        case 3:
+            return effect.bpow;  // bpow
+
+        case 4:
+            return effect.div;  // div
+
+        case 5:
+            return effect.fpow;  // fpow
+
+        case 6:
+            return effect.conv;  // conv
+
+        case 7:
+            return effect.freq;  // freq
+
+        case 8:
+            return effect.inc;  // inc
+
+        default:
+            return -1;
+    }
+}
+static inline void alter_field_at_offset(int offset, int delta) {
+    switch (offset) {
+        case 0:
+            effect.cont = !effect.cont;  // cont
+            break;
+
+        case 1:
+            break;  // res (reserved, cannot be changed)
+
+        case 2:
+            effect.motor = (effect.motor + delta) & 0xf;  // motor
+
+            if (effect.motor == 0) effect.motor = 1;  // motor cannot be zero
+
+            break;
+
+        case 3:
+            effect.bpow = (effect.bpow + delta) & 0x7;  // bpow
+
+            if (effect.bpow)
+                effect.fpow = 0;  // cannot have both forward and backward power
+
+            break;
+
+        case 4:
+            effect.div = !effect.div;  // div
+
+            if (effect.conv && effect.div)
+                effect.conv =
+                    false;  // cannot have both convergent and divergent
+
+            break;
+
+        case 5:
+            effect.fpow = (effect.fpow + delta) & 0x7;  // fpow
+
+            if (effect.fpow)
+                effect.bpow = 0;  // cannot have both forward and backward power
+
+            break;
+
+        case 6:
+            effect.conv = !effect.conv;  // conv
+
+            if (effect.conv && effect.div)
+                effect.div =
+                    false;  // cannot have both convergent and divergent
+
+            break;
+
+        case 7:
+            effect.freq = (effect.freq + delta) & 0xff;  // freq
+            break;
+
+        case 8:
+            effect.inc = (effect.inc + delta) & 0xff;  // inc
+            break;
+
+        default:
+            break;
+    }
+}
+
 void redraw_screen() {
 #define STRBUFSIZE 64
     char str_buffer[STRBUFSIZE];
@@ -100,6 +188,28 @@ void redraw_screen() {
     minifont_draw_str(vram_s + (640 * textpos_y) + textpos_x, 640,
                       "Rumble Accessory Tester");
 
+    /* Start drawing the changeable section of the screen */
+    textpos_y += 30;
+    textpos_x = 10;
+    minifont_set_color(0, 0, 255); /* Blue */
+
+    for (int i = 0; i < num_fields; i++)
+        minifont_draw_str(vram_s + (640 * textpos_y) + (textpos_x + 60 * i),
+                          640, fieldnames[i]);
+
+    textpos_y += 16;
+
+    for (int i = 0; i < num_fields; i++) {
+        if (cursor_pos == i)
+            minifont_set_color(255, 0, 0); /* Red */
+        else
+            minifont_set_color(255, 255, 255); /* White */
+
+        snprintf(str_buffer, STRBUFSIZE, " %u ", offset2field(i));
+        minifont_draw_str(vram_s + (640 * textpos_y) + (textpos_x + (60 * i)),
+                          640, str_buffer);
+    }
+
     textpos_y += 20;
     textpos_x = 10;
     minifont_draw_str(vram_s + (640 * textpos_y) + textpos_x, 640,
@@ -108,6 +218,17 @@ void redraw_screen() {
     snprintf(str_buffer, STRBUFSIZE, "0x%08lx", effect.raw);
     minifont_draw_str(vram_s + (640 * textpos_y) + textpos_x + 145, 640,
                       str_buffer);
+
+    if (loaded_pattern >= 0) {
+        textpos_y = 200;
+        textpos_x = 10;
+        minifont_draw_str(vram_s + (640 * textpos_y) + textpos_x, 640,
+                          "Loaded baked pattern:");
+        minifont_set_color(0, 255, 0); /* Green */
+        textpos_y += 16;
+        minifont_draw_str(vram_s + (640 * textpos_y) + textpos_x + 20, 640,
+                          catalog[loaded_pattern].description);
+    }
 
     /* Draw the bottom half of the screen and finish it up. */
     textpos_y = 360;
@@ -171,14 +292,12 @@ void wait_for_dev_attach(maple_device_t **dev_ptr, unsigned int func) {
     vid_flip(-1);
 }
 
-
 int main(int argc, char *argv[]) {
     cont_state_t *state;
     maple_device_t *contdev = NULL, *purudev = NULL;
 
     uint16_t old_buttons = 0, rel_buttons = 0;
 
-    word2hexbytes(effect.raw, n);
     vid_set_mode(DM_640x480 | DM_MULTIBUFFER, PM_RGB565);
 
     /* Loop until Start is pressed */
@@ -198,41 +317,45 @@ int main(int argc, char *argv[]) {
 
         if ((state->buttons & CONT_DPAD_LEFT) &&
             (rel_buttons & CONT_DPAD_LEFT)) {
-            if (cursor_pos > 0) cursor_pos--;
+            cursor_pos = cursor_pos - 1;
+
+            if (cursor_pos < 0) cursor_pos = num_fields - 1;
+
+            if (cursor_pos == 1) cursor_pos = 0;
         }
 
         if ((state->buttons & CONT_DPAD_RIGHT) &&
             (rel_buttons & CONT_DPAD_RIGHT)) {
-            if (cursor_pos < 7) cursor_pos++;
+            cursor_pos = (cursor_pos + 1) % num_fields;
+
+            if (cursor_pos == 1) cursor_pos = 2;
         }
 
-        if ((state->buttons & CONT_DPAD_UP) && (rel_buttons & CONT_DPAD_UP)) {
-            if (n[cursor_pos] < 15) n[cursor_pos]++;
-        }
+        int delta = (state->buttons & CONT_DPAD_UP)
+                    ? 1
+                    : ((state->buttons & CONT_DPAD_DOWN) ? -1 : 0);
 
-        if ((state->buttons & CONT_DPAD_DOWN) &&
-            (rel_buttons & CONT_DPAD_DOWN)) {
-            if (n[cursor_pos] > 0) n[cursor_pos]--;
+        if (delta) {
+            alter_field_at_offset(cursor_pos, delta);
+            loaded_pattern = -1;
+            usleep(100000); /* 1/10th second to make it humanely manageable*/
         }
 
         if ((state->buttons & CONT_X) && (rel_buttons & CONT_X)) {
-            printf("Setting baked effect:\n\t'%s'\n",
-                   catalog[catalog_index].description);
-            word2hexbytes(catalog[catalog_index].effect.raw, n);
+            effect = catalog[catalog_index].effect;
+            loaded_pattern = catalog_index;
             catalog_index++;
 
-            if (catalog_index >= sizeof(catalog) / sizeof(baked_pattern_t)) {
+            if (catalog_index >= sizeof(catalog) / sizeof(baked_pattern_t))
                 catalog_index = 0;
-            }
         }
 
 
         if ((state->buttons & CONT_A) && (rel_buttons & CONT_A)) {
-            purupuru_rumble(purudev, &effect);
             /* We print these out to make it easier to track the options chosen
              */
-            printf("Rumble: 0x%lx!\n", effect.raw);
-            print_rumble_fields(effect);
+            printf("Rumble effect hex code: 0x%lx!\n", effect.raw);
+            purupuru_rumble(purudev, &effect);
         }
 
         if ((state->buttons & CONT_B) && (rel_buttons & CONT_B)) {
@@ -241,7 +364,6 @@ int main(int argc, char *argv[]) {
         }
 
         old_buttons = state->buttons;
-        hexbytes2word(n, &effect.raw);
         redraw_screen();
     }
 
