@@ -8,16 +8,16 @@
 */
 
 /*
-    This example allows you to send raw commands to the rumble accessory (aka
-   purupuru).
+        This example allows you to send raw commands to the rumble accessory
+   (aka purupuru).
 
-    This is a recreation of an original posted by SinisterTengu in 2004 here:
-    https://dcemulation.org/phpBB/viewtopic.php?p=490067#p490067 .
+        This is a recreation of an original posted by SinisterTengu in 2004
+   here: https://dcemulation.org/phpBB/viewtopic.php?p=490067#p490067 .
    Unfortunately, that one is lost, but I had based my vmu_beep testing on it,
    and the principle is the same. In each, a single 32-bit value is sent to the
    device which defines the features of the rumbling.
 
-    TODO: This should be updated at some point to display and work from the
+        TODO: This should be updated at some point to display and work from the
    macros in dc/maple/purupuru.h that define the characteristics of the raw
    32-bit value.
 
@@ -34,7 +34,33 @@
 
 KOS_INIT_FLAGS(INIT_DEFAULT);
 
-plx_fcxt_t *cxt;
+
+typedef struct {
+    purupuru_effect_t effect;
+    const char *description;
+} baked_pattern_t;
+
+static const baked_pattern_t catalog[] = {
+    {.effect = {.cont = false, .motor = 1, .fpow = 7, .freq = 26, .inc =  1}, .description = "Basic Thud (simple .5s jolt)"},
+    {.effect = {.cont = true,  .motor = 1, .fpow = 1, .freq =  7, .inc = 49}, .description = "Car Idle (69 Mustang)"},
+    {.effect = {.cont = false, .motor = 1, .fpow = 7, .conv = true, .freq = 21, .inc = 38}, .description = "Car Idle (VW beetle)"},
+    {.effect = {.cont = false, .motor = 1, .fpow = 7, .conv = true, .freq = 57, .inc = 51}, .description = "Eathquake (Vibrate, and fade out)"},
+    {.effect = {.cont = true,  .motor = 1, .fpow = 1, .freq =  40, .inc = 5}, .description = "Helicopter"},
+    {.effect = {.cont = false, .motor = 1, .fpow = 2, .freq =  7, .inc = 0}, .description = "Ship's Thrust (as in AAC)"},
+};
+
+
+/* motor cannot be 0 (will generate error on official hardware), but we can set
+ * everything else to 0 for stopping */
+static const purupuru_effect_t rumble_stop = {.motor = 1};
+static purupuru_effect_t effect = rumble_stop;
+
+static plx_fcxt_t *cxt;
+static plx_font_t *fnt;
+static uint8_t n[8];
+static int cursor_pos = 0;
+static size_t catalog_index = 0;
+
 
 void print_rumble_fields(purupuru_effect_t fields) {
     printf("Rumble Fields:\n");
@@ -49,6 +75,78 @@ void print_rumble_fields(purupuru_effect_t fields) {
     printf("  .freq   =  %u,\n", fields.freq);
     printf("  .inc    =  %u,\n", fields.inc);
 }
+
+void redraw_screen() {
+    point_t w;
+    char s[8][2] = {"", "", "", "", "", "", "", ""};
+
+    /* Start drawing and draw the header */
+    pvr_wait_ready();
+    pvr_scene_begin();
+    pvr_list_begin(PVR_LIST_OP_POLY);
+    pvr_list_begin(PVR_LIST_TR_POLY);
+    plx_fcxt_begin(cxt);
+
+    w.x = 70.0f;
+    w.y = 70.0f;
+    w.z = 10.0f;
+    plx_fcxt_setpos_pnt(cxt, &w);
+    plx_fcxt_draw(cxt, "Rumble Test by Quzar");
+
+    /* Start drawing the changeable section of the screen */
+    w.x += 130;
+    w.y += 120.0f;
+    plx_fcxt_setpos_pnt(cxt, &w);
+    plx_fcxt_setsize(cxt, 30.0f);
+    plx_fcxt_draw(cxt, "0x");
+
+    w.x += 48.0f;
+    plx_fcxt_setpos_pnt(cxt, &w);
+
+    for (int count = 0; count <= 7; count++, w.x += 25.0f) {
+        if (cursor_pos == count)
+            plx_fcxt_setcolor4f(cxt, 1.0f, 0.9f, 0.9f, 0.0f);
+        else
+            plx_fcxt_setcolor4f(cxt, 1.0f, 1.0f, 1.0f, 1.0f);
+
+        sprintf(s[count], "%x", n[count]);
+
+        plx_fcxt_draw(cxt, s[count]);
+    }
+
+    /* Draw the bottom half of the screen and finish it up. */
+    plx_fcxt_setsize(cxt, 24.0f);
+    plx_fcxt_setcolor4f(cxt, 1.0f, 1.0f, 1.0f, 1.0f);
+    w.x = 65.0f;
+    w.y += 50.0f;
+
+    plx_fcxt_setpos_pnt(cxt, &w);
+    plx_fcxt_draw(cxt, "Press left/right to switch digits.");
+    w.y += 25.0f;
+
+    plx_fcxt_setpos_pnt(cxt, &w);
+    plx_fcxt_draw(cxt, "Press up/down to change values.");
+    w.y += 25.0f;
+
+    plx_fcxt_setpos_pnt(cxt, &w);
+    plx_fcxt_draw(cxt, "Press A to start rumblin.");
+    w.y += 25.0f;
+
+    plx_fcxt_setpos_pnt(cxt, &w);
+    plx_fcxt_draw(cxt, "Press B to stop rumblin.");
+    w.y += 25.0f;
+
+    plx_fcxt_setpos_pnt(cxt, &w);
+    plx_fcxt_draw(cxt, "Press X for next baked pattern");
+    w.y += 25.0f;
+
+    plx_fcxt_setpos_pnt(cxt, &w);
+    plx_fcxt_draw(cxt, "Press Start to quit.");
+
+    plx_fcxt_end(cxt);
+    pvr_scene_finish();
+}
+
 /* This blocks waiting for a specified device to be present and valid */
 void wait_for_dev_attach(maple_device_t **dev_ptr, unsigned int func) {
     const point_t w = {40.0f, 200.0f, 10.0f, 0.0f};
@@ -94,24 +192,6 @@ void wait_for_dev_attach(maple_device_t **dev_ptr, unsigned int func) {
     pvr_scene_finish();
 }
 
-typedef struct {
-    purupuru_effect_t effect;
-    const char *description;
-} baked_pattern_t;
-
-/* motor cannot be 0 (will generate error on official hardware), but we can set
- * everything else to 0 for stopping */
-static const purupuru_effect_t rumble_stop = {.motor = 1};
-
-static size_t catalog_index = 0;
-static const baked_pattern_t catalog[] = {
-    {.effect = {.cont = false, .motor = 1, .fpow = 7, .freq = 26, .inc =  1}, .description = "Basic Thud (simple .5s jolt)"},
-    {.effect = {.cont = true,  .motor = 1, .fpow = 1, .freq =  7, .inc = 49}, .description = "Car Idle (69 Mustang)"},
-    {.effect = {.cont = false, .motor = 1, .fpow = 7, .conv = true, .freq = 21, .inc = 38}, .description = "Car Idle (VW beetle)"},
-    {.effect = {.cont = false, .motor = 1, .fpow = 7, .conv = true, .freq = 57, .inc = 51}, .description = "Eathquake (Vibrate, and fade out)"},
-    {.effect = {.cont = true,  .motor = 1, .fpow = 1, .freq =  40, .inc = 5}, .description = "Helicopter"},
-    {.effect = {.cont = false, .motor = 1, .fpow = 2, .freq =  7, .inc = 0}, .description = "Ship's Thrust (as in AAC)"},
-};
 
 static inline void word2hexbytes(uint32_t word, uint8_t *bytes) {
     for (int i = 0; i < 8; i++) {
@@ -123,14 +203,9 @@ int main(int argc, char *argv[]) {
     cont_state_t *state;
     maple_device_t *contdev = NULL, *purudev = NULL;
 
-    plx_font_t *fnt;
-    point_t w;
-    int i = 0, count = 0;
     uint16_t old_buttons = 0, rel_buttons = 0;
-    purupuru_effect_t effect = {.raw = 0};
-    uint8_t n[8];
-    char s[8][2] = {"", "", "", "", "", "", "", ""};
-    word2hexbytes(0, n);
+
+    word2hexbytes(effect.raw, n);
 
     pvr_init_defaults();
 
@@ -146,40 +221,6 @@ int main(int argc, char *argv[]) {
         wait_for_dev_attach(&contdev, MAPLE_FUNC_CONTROLLER);
         wait_for_dev_attach(&purudev, MAPLE_FUNC_PURUPURU);
 
-        /* Start drawing and draw the header */
-        pvr_wait_ready();
-        pvr_scene_begin();
-        pvr_list_begin(PVR_LIST_OP_POLY);
-        pvr_list_begin(PVR_LIST_TR_POLY);
-        plx_fcxt_begin(cxt);
-
-        w.x = 70.0f;
-        w.y = 70.0f;
-        w.z = 10.0f;
-        plx_fcxt_setpos_pnt(cxt, &w);
-        plx_fcxt_draw(cxt, "Rumble Test by Quzar");
-
-        /* Start drawing the changeable section of the screen */
-        w.x += 130;
-        w.y += 120.0f;
-        plx_fcxt_setpos_pnt(cxt, &w);
-        plx_fcxt_setsize(cxt, 30.0f);
-        plx_fcxt_draw(cxt, "0x");
-
-        w.x += 48.0f;
-        plx_fcxt_setpos_pnt(cxt, &w);
-
-        for (count = 0; count <= 7; count++, w.x += 25.0f) {
-            if (i == count)
-                plx_fcxt_setcolor4f(cxt, 1.0f, 0.9f, 0.9f, 0.0f);
-            else
-                plx_fcxt_setcolor4f(cxt, 1.0f, 1.0f, 1.0f, 1.0f);
-
-            sprintf(s[count], "%x", n[count]);
-
-            plx_fcxt_draw(cxt, s[count]);
-        }
-
         /* Store current button states + buttons which have been released. */
         state = (cont_state_t *)maple_dev_status(contdev);
 
@@ -190,21 +231,21 @@ int main(int argc, char *argv[]) {
 
         if ((state->buttons & CONT_DPAD_LEFT) &&
             (rel_buttons & CONT_DPAD_LEFT)) {
-            if (i > 0) i--;
+            if (cursor_pos > 0) cursor_pos--;
         }
 
         if ((state->buttons & CONT_DPAD_RIGHT) &&
             (rel_buttons & CONT_DPAD_RIGHT)) {
-            if (i < 7) i++;
+            if (cursor_pos < 7) cursor_pos++;
         }
 
         if ((state->buttons & CONT_DPAD_UP) && (rel_buttons & CONT_DPAD_UP)) {
-            if (n[i] < 15) n[i]++;
+            if (n[cursor_pos] < 15) n[cursor_pos]++;
         }
 
         if ((state->buttons & CONT_DPAD_DOWN) &&
             (rel_buttons & CONT_DPAD_DOWN)) {
-            if (n[i] > 0) n[i]--;
+            if (n[cursor_pos] > 0) n[cursor_pos]--;
         }
 
         if ((state->buttons & CONT_X) && (rel_buttons & CONT_X)) {
@@ -275,8 +316,6 @@ int main(int argc, char *argv[]) {
     if ((purudev != NULL) && purudev->valid)
         purupuru_rumble(purudev, &rumble_stop);
 
-    plx_font_destroy(fnt);
-    plx_fcxt_destroy(cxt);
-
-    return 0;
+    old_buttons = state->buttons;
+    redraw_screen();
 }
