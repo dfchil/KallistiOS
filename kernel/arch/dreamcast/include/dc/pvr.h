@@ -1123,6 +1123,11 @@ int pvr_scene_finish(void);
       stays everywhere else in the tile.
     - Modifier volumes act within their pass: a volume shadows only the
       polygons of its own pass, and doesn't affect later passes.
+    - An autosorted translucent list leaves its polygons' depth in the depth
+      buffer, whatever their depth write setting: later passes are depth
+      tested against them. A presorted list follows the depth write setting.
+      So a pass whose translucent polygons must not hide what later passes
+      draw (a decal or shadow drawn without depth write) has to be presorted.
 
     This allows, for example, opaque geometry drawn after translucent geometry
     (keeping the opaque list's deferred shading), presorted and autosorted
