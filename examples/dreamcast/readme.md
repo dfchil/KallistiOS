@@ -103,6 +103,10 @@ This page serves as an index for all KallistiOS examples.
 - pthread
   - general
 - pvr
+  - bgplane_gradient
+  - bgplane_horizon
+  - bgplane_hwtest
+  - bgplane_texture
   - bumpmap
   - cheap_shadow
   - fb_tex
