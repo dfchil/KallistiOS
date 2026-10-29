@@ -33,24 +33,51 @@
 #define PVR_TILE_MATRIX_HEADER_SIZE 0x48
 
 
+/* Write one region array entry (the hardware's name for the tile matrix
+   entry): a control word and the five list pointers, in the order OP,
+   OP modifier, TR, TR modifier, PT. flags holds the PVR_TILE_* control bits;
+   the tile position is added here. Returns the address of the next entry. */
+static inline uint32_t *pvr_tile_entry_write(uint32_t *vr, int x, int y,
+                                             uint32_t flags,
+                                             const uint32_t lists[PVR_OPB_COUNT]) {
+    vr[0] = flags | ((uint32_t)y << 8) | ((uint32_t)x << 2);
+    vr[1] = lists[0];
+    vr[2] = lists[1];
+    vr[3] = lists[2];
+    vr[4] = lists[3];
+    vr[5] = lists[4];
+
+    return vr + 6;
+}
+
+/* Fill in the list pointers of tile number tn (tw * y + x) in TA buffer buf.
+   If a list isn't enabled, its pointer is set to PVR_TILE_LIST_EMPTY, which
+   tells the PVR to ignore it. */
+static inline void pvr_tile_entry_lists(const volatile pvr_ta_buffers_t *buf,
+                                        int tn, uint32_t lists[PVR_OPB_COUNT]) {
+    int i;
+
+    for(i = 0; i < PVR_OPB_COUNT; i++)
+        lists[i] = LIST_ENABLED(i) ?
+                   buf->opb_addresses[i] + (pvr_state.opb_size[i] * tn) :
+                   PVR_TILE_LIST_EMPTY;
+}
+
 /* Fill Tile Matrix buffers. This function takes a base address and sets up
    the rendering structures there. Each tile of the screen (32x32) receives
    a small buffer space. */
 static void pvr_init_tile_matrix(int which, bool presort) {
+    static const uint32_t empty[PVR_OPB_COUNT] = {
+        PVR_TILE_LIST_EMPTY, PVR_TILE_LIST_EMPTY, PVR_TILE_LIST_EMPTY,
+        PVR_TILE_LIST_EMPTY, PVR_TILE_LIST_EMPTY
+    };
     volatile pvr_ta_buffers_t   *buf;
-    int     x, y, tn;
+    uint32_t    lists[PVR_OPB_COUNT];
+    int     x, y;
     uint32_t      *vr;  /* Note: We're working in 4-byte pointer maths in this function */
-    volatile int    *opb_sizes;
-    //uint32_t      matbase, opbbase;
 
     vr = (uint32_t *)PVR_RAM_BASE;
     buf = pvr_state.ta_buffers + which;
-    opb_sizes = pvr_state.opb_size;
-
-#if 0
-    matbase = buf->tile_matrix;
-    opbbase = buf->opb;
-#endif
 
     /*
         FIXME? Is this header necessary? If we're moving the tilematrix
@@ -64,23 +91,7 @@ static void pvr_init_tile_matrix(int which, bool presort) {
         * vr++ = 0;
 
     /* Initial init tile */
-    vr[0] = 0x10000000;
-    vr[1] = 0x80000000;
-    vr[2] = 0x80000000;
-    vr[3] = 0x80000000;
-    vr[4] = 0x80000000;
-    vr[5] = 0x80000000;
-    vr += 6;
-
-    /* Now the main tile matrix */
-#if 0
-    dbglog(DBG_KDEBUG, "  Using poly buffers %08lx/%08lx/%08lx/%08lx/%08lx\r\n",
-           buf->opb_type[0],
-           buf->opb_type[1],
-           buf->opb_type[2],
-           buf->opb_type[3],
-           buf->opb_type[4]);
-#endif  /* !NDEBUG */
+    vr = pvr_tile_entry_write(vr, 0, 0, PVR_TILE_NO_WRITEOUT, empty);
 
     /*
         This sets up the addresses for each list, for each tile in the
@@ -97,30 +108,13 @@ static void pvr_init_tile_matrix(int which, bool presort) {
 
     for(x = 0; x < pvr_state.tw; x++) {
         for(y = 0; y < pvr_state.th; y++) {
-            tn = (pvr_state.tw * y) + x;
-
-            /* Control word */
-            vr[0] = (y << 8) | (x << 2) | (presort << 29);
-
-            /* Opaque poly buffer */
-            vr[1] = LIST_ENABLED(0) ? buf->opb_addresses[0] + (opb_sizes[0] * tn) : 0x80000000;
-
-            /* Opaque volume mod buffer */
-            vr[2] = LIST_ENABLED(1) ? buf->opb_addresses[1] + (opb_sizes[1] * tn) : 0x80000000;
-
-            /* Translucent poly buffer */
-            vr[3] = LIST_ENABLED(2) ? buf->opb_addresses[2] + (opb_sizes[2] * tn) : 0x80000000;
-
-            /* Translucent volume mod buffer */
-            vr[4] = LIST_ENABLED(3) ? buf->opb_addresses[3] + (opb_sizes[3] * tn) : 0x80000000;
-
-            /* Punch-thru poly buffer */
-            vr[5] = LIST_ENABLED(4) ? buf->opb_addresses[4] + (opb_sizes[4] * tn) : 0x80000000;
-            vr += 6;
+            pvr_tile_entry_lists(buf, (pvr_state.tw * y) + x, lists);
+            vr = pvr_tile_entry_write(vr, x, y,
+                                      presort ? PVR_TILE_PRESORT : 0, lists);
         }
     }
 
-    vr[-6] |= BIT(31);
+    vr[-6] |= PVR_TILE_LAST;
 }
 
 /* Fill all tile matrices */
@@ -144,12 +138,12 @@ void pvr_set_presort_mode(bool presort) {
 
     for(x = 0; x < pvr_state.tw; x++) {
         for(y = 0; y < pvr_state.th; y++) {
-            vr[0] = (y << 8) | (x << 2) | (presort << 29);
+            vr[0] = (y << 8) | (x << 2) | (presort ? PVR_TILE_PRESORT : 0);
             vr += 6;
         }
     }
 
-    vr[-6] |= BIT(31);
+    vr[-6] |= PVR_TILE_LAST;
 }
 
 
