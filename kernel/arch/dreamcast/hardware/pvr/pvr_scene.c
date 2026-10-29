@@ -371,6 +371,34 @@ int pvr_scene_finish(void) {
     return 0;
 }
 
+/* Finish a scene that is rendered from a cache alone, with no TA work. */
+int pvr_scene_finish_cached(pvr_cache_t *cache) {
+    int o;
+
+    if(!cache || pvr_state.dma_mode)
+        return -1;
+
+    /* The frame is the cache alone: nothing may have been submitted */
+    if(pvr_state.list_reg_open != PVR_LIST_NONE || pvr_state.lists_closed) {
+        dbglog(DBG_WARNING, "pvr_scene_finish_cached: lists were submitted "
+                            "in this scene\n");
+        return -1;
+    }
+
+    /* Wait for the previous scene, as the first list of a scene would */
+    pvr_start_ta_rendering();
+
+    /* Queue the frame. It starts now if the PVR is free, otherwise from
+       the render-done or vblank interrupt, like a TA frame. */
+    o = irq_disable();
+    pvr_state.frame_cache = cache;
+    pvr_sync_stats(PVR_SYNC_REGDONE);
+    pvr_start_cached_frame();
+    irq_restore(o);
+
+    return 0;
+}
+
 int pvr_wait_ready(void) {
     int flags, t = 0;
 

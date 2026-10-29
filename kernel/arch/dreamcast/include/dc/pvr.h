@@ -712,6 +712,16 @@ typedef struct {
         but it allows using much smaller vertex buffers. */
     int     vbuf_doublebuf_disabled;
 
+    /** \brief  VRAM reserved for cached object lists, in bytes.
+
+        Reserves this much 32-bit VRAM at the end of each of the two TA
+        buffer sets, for caches made with pvr_cache_create(). This takes
+        twice the amount from texture memory. Set to 0 (the default) to
+        reserve nothing and keep the usual VRAM layout.
+
+        \sa pvr_cache */
+    int     cached_list_size;
+
 } pvr_init_params_t;
 
 /** \brief   PVR initialization structure defaults
@@ -737,8 +747,10 @@ static const pvr_init_params_t pvr_default_params = {
 
     \param  params          The set of parameters to initialize with
     \retval 0               On success
-    \retval -1              If the PVR has already been initialized or the video
-                            mode active is not suitable for 3D
+    \retval -1              If the PVR has already been initialized, the video
+                            mode active is not suitable for 3D, or the buffers
+                            (with pvr_init_params_t::cached_list_size) don't
+                            fit in VRAM
 */
 int pvr_init(const pvr_init_params_t *params);
 
@@ -1326,6 +1338,7 @@ pvr_ptr_t pvr_get_back_buffer(void);
 #include "pvr/pvr_pal.h"
 #include "pvr/pvr_txr.h"
 #include "pvr/pvr_legacy.h"
+#include "pvr/pvr_cache.h"
 
 __END_DECLS
 
