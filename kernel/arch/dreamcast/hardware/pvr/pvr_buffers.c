@@ -146,6 +146,10 @@ static uint32_t pvr_pass_flags(int p) {
        && p == pvr_state.pass_count - 1)
         flags |= PVR_RA_NO_WRITEOUT;
 
+    /* Hardware test hook: write the tile out after every pass. */
+    if(pvr_mp_test_flags & PVR_MP_TEST_ALL_WRITEOUT)
+        flags &= ~PVR_RA_NO_WRITEOUT;
+
     return flags;
 }
 
@@ -153,7 +157,8 @@ static uint32_t pvr_pass_flags(int p) {
 static uint32_t pvr_tile_matrix_key(void) {
     return pvr_state.pass_presort
            | ((pvr_mp_test_flags & PVR_MP_TEST_LAST_NO_WRITEOUT) ? BIT(31) : 0)
-           | ((pvr_mp_test_flags & PVR_MP_TEST_NO_OL_BASE) ? BIT(30) : 0);
+           | ((pvr_mp_test_flags & PVR_MP_TEST_NO_OL_BASE) ? BIT(30) : 0)
+           | ((pvr_mp_test_flags & PVR_MP_TEST_ALL_WRITEOUT) ? BIT(29) : 0);
 }
 
 /* Fill Tile Matrix buffers. This function takes a base address and sets up
