@@ -10,8 +10,9 @@
 
    Q1  Mixed sort modes in one frame: is the presort bit applied per tile?
    Q2  Skipped tiles: do tiles left out of the array keep their pixels?
-   Q3  Every tile skipped (only the dummy entry, marked last): does the
-       render complete?
+   Q3  Every tile skipped: does the frame complete without drawing? (The
+       hardware hangs on an array holding only the dummy entry, so KOS
+       doesn't start such a render; this checks that path.)
    Q4  Out-of-order tiles: does a reordered array render the same image?
 
    Build options: TESTS (bit mask, bit 0 = Q1 ... bit 3 = Q4; Q3 runs last
@@ -731,10 +732,17 @@ static bool q3(int *frame) {
         return false;
     }
 
+    /* The static picture into both buffers again, since the one-tile
+       frames changed tile 0,0 */
+    pvr_set_rect_enabled(0, 0, SCREEN_W, 480, true);
+    draw_frames(SCENE_STATIC, 6, frame);
+    settle();
+    ref = area_sum(vram_s);
+
     /* Then the empty array: only the dummy entry, marked last */
     say(0, "Q3 every tile skipped (dummy entry only)");
     printf("Q3 starting empty-array frames (a hang here answers Q3: NO)\n");
-    pvr_set_tile_enabled(0, 0, false);
+    pvr_set_rect_enabled(0, 0, SCREEN_W, 480, false);
     timeouts = q3_frames(60, frame, ref, &changed, &rnd);
     array_summary("q3-empty");
     result(false, "Q3 empty array: 60 frames, %d timeouts, %d frames "
@@ -757,7 +765,7 @@ static bool q3(int *frame) {
     if(timeouts || changed < 8)
         result(true, "Q3 ANSWER: ? no hang, but no recovery");
     else if(!empty_changed)
-        result(true, "Q3 ANSWER: YES, empty array accepted, nothing drawn");
+        result(true, "Q3 ANSWER: YES, all-skipped frames done, nothing drawn");
     else
         result(true, "Q3 ANSWER: ? accepted, but drew in %d frames",
                empty_changed);
