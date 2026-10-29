@@ -63,10 +63,12 @@
 #define GROUND_A    0xff3c6e32
 #define GROUND_B    0xff508c3c
 
+/* The ground has many small polygons in the tiles along the horizon: give
+   the opaque list large bins and spare OPBs, so none are dropped. */
 static pvr_init_params_t params = {
-    { PVR_BINSIZE_16, PVR_BINSIZE_0, PVR_BINSIZE_16, PVR_BINSIZE_0,
+    { PVR_BINSIZE_32, PVR_BINSIZE_0, PVR_BINSIZE_16, PVR_BINSIZE_0,
       PVR_BINSIZE_0 },
-    512 * 1024, 0, 0, 0, 0, 0
+    512 * 1024, 0, 0, 0, 4, 0
 };
 
 typedef struct {
