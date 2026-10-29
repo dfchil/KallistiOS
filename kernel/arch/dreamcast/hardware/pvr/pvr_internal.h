@@ -292,9 +292,10 @@ void pvr_sync_tile_matrix(int which);
 #define PVR_RA_LAST         BIT(31)     /* Last entry of the array */
 #define PVR_RA_ZKEEP        BIT(30)     /* Keep depth (and colour) from the previous entry */
 #define PVR_RA_PRESORT      BIT(29)     /* Presort the TR list of this entry */
-#define PVR_RA_NO_WRITEOUT  BIT(28)     /* Don't write the tile out after this entry
-                                           (never on a tile's last entry: then
-                                           the render-done IRQ doesn't come) */
+#define PVR_RA_NO_WRITEOUT  BIT(28)     /* Don't write the tile out after this entry.
+                                           On a tile's last entry the tile is
+                                           never written; on the array's last
+                                           entry the render never finishes. */
 #define PVR_RA_TILE_Y(y)    ((uint32_t)(y) << 8)
 #define PVR_RA_TILE_X(x)    ((uint32_t)(x) << 2)
 #define PVR_RA_FLAGS_MASK   (PVR_RA_ZKEEP | PVR_RA_PRESORT | PVR_RA_NO_WRITEOUT)

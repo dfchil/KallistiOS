@@ -1154,8 +1154,9 @@ int pvr_scene_finish(void);
     - Bit 28 = 1 means "don't write the tile out". KOS sets it on every entry
       of a tile but the last. Cleared on every entry, the picture is still
       right, but a two-pass 640x480 frame took 11.8 ms instead of 3.7 ms
-      (23.5 ms instead of 7.0 ms with FSAA). Set on the last entry too,
-      nothing is written out and the render-done interrupt never comes.
+      (23.5 ms instead of 7.0 ms with FSAA). Set on a tile's last entry
+      too, the tile is not written out; on the array's last entry, the
+      render never finishes (no render-done interrupt).
     - TA_OL_BASE must move: without it, the next pass's object lists
       overwrite the earlier pass's first bins and its geometry is lost.
     - Waiting for the list-done interrupts before TA_LIST_CONT was not
