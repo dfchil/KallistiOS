@@ -184,8 +184,11 @@ typedef struct {
     uint32_t  pclip_x, pclip_y;           // Composited clip constants
 
     // Background plane. All zero (the state after pvr_init) is the default:
-    // black, default vertices.
+    // black, default vertices, no texture.
     bool      bg_custom;                  // Vertices from pvr_set_bg_poly()?
+    bool      bg_textured;                // Texture set?
+    uint32_t  bg_tsp;                     // Texture fields of the TSP word
+    uint32_t  bg_tcw;                     // Texture control word
     pvr_bg_vertex_t bg_vert[3];           // Vertices (only argb if !bg_custom)
 
     /* Running statistics on the PVR system. All vars are in terms

@@ -58,6 +58,7 @@ void pvr_set_bg_color(float r, float g, float b) {
     irq_disable_scoped();
 
     pvr_state.bg_custom = false;
+    pvr_state.bg_textured = false;
     pvr_state.bg_vert[0].argb = argb;
     pvr_state.bg_vert[1].argb = argb;
     pvr_state.bg_vert[2].argb = argb;
@@ -105,6 +106,39 @@ int pvr_set_bg_poly(const pvr_bg_vertex_t v[3]) {
     pvr_state.bg_vert[0] = v[0];
     pvr_state.bg_vert[1] = v[a];
     pvr_state.bg_vert[2] = v[b];
+
+    return 0;
+}
+
+/* Set or remove the background plane's texture */
+int pvr_set_bg_texture(pvr_ptr_t txr, int textureformat, int tw, int th,
+                       pvr_filter_mode_t filtering) {
+    uint32_t tsp, tcw;
+
+    if(!txr) {
+        irq_disable_scoped();
+        pvr_state.bg_textured = false;
+        return 0;
+    }
+
+    if(tw < 8 || tw > 1024 || __builtin_popcount(tw) != 1 ||
+       th < 8 || th > 1024 || __builtin_popcount(th) != 1 ||
+       (filtering != PVR_FILTER_NEAREST && filtering != PVR_FILTER_BILINEAR))
+        return -1;
+
+    /* Texture fields as pvr_poly_compile() sets them: repeat in U and V, no
+       flip, texture alpha ignored, no mipmaps. */
+    tsp = PVR_TA_PM2_TXRALPHA
+          | FIELD_PREP(PVR_TA_PM2_FILTER, filtering)
+          | FIELD_PREP(PVR_TA_PM2_USIZE, __builtin_ctz(tw) - 3)
+          | FIELD_PREP(PVR_TA_PM2_VSIZE, __builtin_ctz(th) - 3);
+    tcw = (textureformat & PVR_TA_PM3_TXRFMT) | to_pvr_txr_ptr(txr);
+
+    irq_disable_scoped();
+
+    pvr_state.bg_textured = true;
+    pvr_state.bg_tsp = tsp;
+    pvr_state.bg_tcw = tcw;
 
     return 0;
 }
@@ -268,13 +302,16 @@ static int pvr_write_bkg_poly(volatile uint32_t *dst, uint32_t w, uint32_t h) {
     /* Default vertices: bottom-left, top-left, bottom-right. */
     const float def_x[3] = { 0.0f, 0.0f, (float)w };
     const float def_y[3] = { (float)h, 0.0f, (float)h };
+    const float def_u[3] = { 0.0f, 0.0f, 1.0f };
+    const float def_v[3] = { 1.0f, 0.0f, 1.0f };
     bool custom = pvr_state.bg_custom;
+    bool textured = pvr_state.bg_textured;
     volatile pvr_bg_vertex_t *v;
     int i;
 
-    *dst++ = BKG_ISP_TSP;
-    *dst++ = BKG_TSP;
-    *dst++ = 0;
+    *dst++ = BKG_ISP_TSP | (textured ? PVR_TA_PM1_TXRENABLE : 0);
+    *dst++ = BKG_TSP | (textured ? pvr_state.bg_tsp : 0);
+    *dst++ = textured ? pvr_state.bg_tcw : 0;
 
     for(i = 0; i < 3; i++) {
         v = &pvr_state.bg_vert[i];
@@ -283,10 +320,15 @@ static int pvr_write_bkg_poly(volatile uint32_t *dst, uint32_t w, uint32_t h) {
         *dst++ = float_bits(custom ? v->y : def_y[i]);
         *dst++ = float_bits(custom ? v->z : FLT_EPSILON);
 
+        if(textured) {
+            *dst++ = float_bits(custom ? v->u : def_u[i]);
+            *dst++ = float_bits(custom ? v->v : def_v[i]);
+        }
+
         *dst++ = v->argb;
     }
 
-    return 4;
+    return textured ? 6 : 4;
 }
 
 /* Begin a render operation that has been queued completely (i.e., the
