@@ -76,7 +76,8 @@ static inline uint64_t pvr_tile_cols(int x0, int x1) {
    Tiles are listed in column order (x outer, y inner), as KOS always has.
    If skip is true, tiles marked in tile_skipped are left out, so the PVR
    neither renders them nor writes them to the frame buffer. The first entry
-   is an empty dummy; if every tile is skipped, it is also the last. */
+   is an empty dummy; if every tile is skipped, it is also the last, and the
+   array must not be rendered. */
 static void pvr_build_tile_matrix(int which, bool skip) {
     static const uint32_t empty[PVR_OPB_COUNT] = {
         PVR_TILE_LIST_EMPTY, PVR_TILE_LIST_EMPTY, PVR_TILE_LIST_EMPTY,
@@ -84,7 +85,7 @@ static void pvr_build_tile_matrix(int which, bool skip) {
     };
     volatile pvr_ta_buffers_t   *buf;
     uint32_t    lists[PVR_OPB_COUNT];
-    uint32_t    *vr, *last;  /* 4-byte pointer maths */
+    uint32_t    *vr, *first, *last;  /* 4-byte pointer maths */
     uint64_t    presort, skipped;
     int     x, y;
 
@@ -92,7 +93,7 @@ static void pvr_build_tile_matrix(int which, bool skip) {
     vr = (uint32_t *)PVR_RAM_BASE + BYTES_TO_WORDS(buf->tile_matrix);
 
     /* Initial init tile */
-    last = vr;
+    first = last = vr;
     vr = pvr_tile_entry_write(vr, 0, 0, PVR_TILE_NO_WRITEOUT, empty);
 
     /*
@@ -124,7 +125,12 @@ static void pvr_build_tile_matrix(int which, bool skip) {
         }
     }
 
+    /* The hardware never finishes a render whose last entry has
+       PVR_TILE_NO_WRITEOUT set, as the dummy entry has. With every tile
+       skipped, the array is marked empty and the render isn't started at
+       all (see pvr_render_lists()). */
     last[0] |= PVR_TILE_LAST;
+    buf->tile_matrix_empty = (last == first);
 
     /* Remember what this array was built from */
     for(y = 0; y < pvr_state.th; y++) {

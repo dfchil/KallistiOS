@@ -136,6 +136,7 @@ typedef struct {
     uint32_t  tile_matrix, tile_matrix_size;  /* Tile matrix, size */
     uint32_t  opb_overflow_count;             /* Extra OPB space after opb_size for TA overflow */
     bool      tile_matrix_skips;              /* Built with skipped tiles left out */
+    bool      tile_matrix_empty;              /* Every tile left out: don't render */
     uint64_t  tile_matrix_presort[PVR_TILE_MAX];  /* tile_presort it was built from */
     uint64_t  tile_matrix_skipped[PVR_TILE_MAX];  /* tile_skipped it was built from */
 } pvr_ta_buffers_t;
