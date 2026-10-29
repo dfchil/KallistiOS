@@ -90,14 +90,18 @@ static void reset_errors(void) {
     memset((void *)err_count, 0, sizeof(err_count));
 }
 
-/* Prints error interrupt counts; returns their total. */
+/* Prints error interrupt counts; returns their total, OPB_OUTOFMEM left out:
+   stock KOS raises it on every other frame when it switches TA buffers
+   (measured on hardware with a single pass and no overflow in use). */
 static int print_errors(const char *tag) {
     int i, total = 0;
 
     for(i = 0; i < 6; i++) {
         if(err_count[i]) {
-            printf("HWTEST %s irq %s x%d\n", tag, err_name[i], err_count[i]);
-            total += err_count[i];
+            printf("HWTEST %s irq %s x%d%s\n", tag, err_name[i], err_count[i],
+                   i == 3 ? " (also seen with stock KOS, not counted)" : "");
+            if(i != 3)
+                total += err_count[i];
         }
     }
 
@@ -225,15 +229,6 @@ static void fb_fill(uint32_t addr, uint16_t c) {
         p[i] = v;
 }
 
-static void rtt_fill(uint16_t c) {
-    volatile uint16_t *p = (volatile uint16_t *)rtt;
-    int x, y;
-
-    for(y = 0; y < H; y++)
-        for(x = 0; x < W; x++)
-            p[y * RTT_STRIDE + x] = c;
-}
-
 static uint32_t rgb565_to_888(uint16_t c);
 
 /* A saved frame, to compare pixel by pixel */
@@ -339,6 +334,9 @@ static const uint32_t t1_want[3] = {
     RGB(255, 0, 0), RGB(0, 255, 0), RGB(0, 0, 128)
 };
 
+/* Frame buffer addresses seen in T1A */
+static uint32_t t1_fb[2];
+
 /* Returns 1 if all three probes match, 0 if they are all still magenta,
    -1 otherwise. */
 static int t1_classify(const char *tag, uint32_t addr, int texture) {
@@ -378,11 +376,10 @@ static uint64_t t1_time(uint32_t flags) {
 }
 
 static void test1(void) {
-    uint32_t addr, fb[2] = { 0, 0 };
-    int i, r, a_ok = 1, b_fb, b_tx, rec = 1;
-    const char *verdict;
+    uint32_t addr;
+    int i, r, a_ok = 1;
 
-    printf("HWTEST T1 ---- bit 28 (writeout control)\n");
+    printf("HWTEST T1 ---- two passes, bit 28 (writeout control)\n");
     pvr_set_bg_color(0.0f, 0.0f, 0.5f);
     pvr_mp_test_flags = 0;
     reset_errors();
@@ -390,7 +387,7 @@ static void test1(void) {
     /* A: normal two-pass frames, frame buffer and texture */
     for(i = 0; i < 4; i++) {
         addr = render(scene_t1, 0);
-        fb[i & 1] = addr;
+        t1_fb[i & 1] = addr;
         if(i >= 2 && t1_classify("T1A-fb", addr, 0) != 1)
             a_ok = 0;
     }
@@ -405,52 +402,6 @@ static void test1(void) {
     printf("HWTEST T1A two passes, red in pass 0 and green in pass 1: %s\n",
            a_ok ? "PASS" : "FAIL");
     add_summary("T1A 2-pass frame:", a_ok ? "PASS" : "FAIL");
-
-    /* B: bit 28 on the last pass too, frame buffers filled with magenta.
-       0 = all frames untouched, 1 = all written, -1 = anything else */
-    pvr_mp_test_flags = PVR_MP_TEST_LAST_NO_WRITEOUT;
-    b_fb = 2;
-
-    for(i = 0; i < 4; i++) {
-        if(fb[0]) fb_fill(fb[0], MAGIC565);
-        if(fb[1]) fb_fill(fb[1], MAGIC565);
-        addr = render(scene_t1, 0);
-        r = t1_classify("T1B-fb", addr, 0);
-        b_fb = (b_fb == 2 || b_fb == r) ? r : -1;
-    }
-
-    if(!HWTEST_FSAA) {
-        rtt_fill(MAGIC565);
-        addr = render(scene_t1, 1);
-        b_tx = t1_classify("T1B-txr", addr, 1);
-    }
-    else {
-        b_tx = b_fb;
-    }
-
-    pvr_mp_test_flags = 0;
-
-    verdict = (b_fb == 0 && b_tx == 0) ? "CONFIRMED: bit 28 = 1 keeps the tile on chip (no writeout)" :
-              (b_fb == 1 && b_tx == 1) ? "REFUTED: tiles are written out with bit 28 set on the last pass" :
-              "UNEXPECTED: see probe values";
-    printf("HWTEST T1B bit 28 on the last pass: frame buffer %s, texture %s\n",
-           b_fb == 0 ? "untouched" : b_fb == 1 ? "written" : "mixed/corrupt",
-           HWTEST_FSAA ? "not tested" :
-           b_tx == 0 ? "untouched" : b_tx == 1 ? "written" : "corrupt");
-    printf("HWTEST T1B RESULT %s\n", verdict);
-    add_summary("T1B bit 28 on last pass:",
-                (b_fb == 0 && b_tx == 0) ? "NO WRITEOUT (confirmed)" :
-                (b_fb == 1 && b_tx == 1) ? "WRITTEN (refuted)" : "UNEXPECTED");
-
-    /* Back to normal: frames must come out right again. */
-    for(i = 0; i < 2; i++) {
-        addr = render(scene_t1, 0);
-        if(t1_classify("T1C-fb", addr, 0) != 1)
-            rec = 0;
-    }
-
-    printf("HWTEST T1C recovery after T1B: %s\n", rec ? "PASS" : "FAIL");
-    add_summary("T1C recovery:", rec ? "PASS" : "FAIL");
 
     /* D: bit 28 clear on every pass (the tile is written out after each
        pass): is the picture still right? And render times of the three
@@ -467,12 +418,61 @@ static void test1(void) {
            "pass): picture %s\n", r ? "right" : "WRONG");
     add_summary("T1D writeout after each pass:", r ? "picture right" : "WRONG");
 
-    printf("HWTEST T1E average render time (us): bit 28 on pass 0 only %lu, "
-           "on no pass %lu, on both passes %lu\n",
-           (unsigned long)t1_time(0),
-           (unsigned long)t1_time(PVR_MP_TEST_ALL_WRITEOUT),
-           (unsigned long)t1_time(PVR_MP_TEST_LAST_NO_WRITEOUT));
+    printf("HWTEST T1E average render time (us): bit 28 on pass 0 (default) "
+           "%lu, on no pass %lu\n", (unsigned long)t1_time(0),
+           (unsigned long)t1_time(PVR_MP_TEST_ALL_WRITEOUT));
     print_errors("T1");
+}
+
+/* T1B, run last: it may leave the PVR (or KOS's view of it) stuck. Bit 28
+   on the last pass too, both frame buffers filled with magenta first. Did
+   the render-done interrupt come, and was anything written? */
+static void test1b(void) {
+    static const char *fb_name[2] = { "fbA", "fbB" };
+    int i, j, started, done, magic = 1, scene = 1;
+    uint16_t c;
+
+    printf("HWTEST T1B ---- bit 28 on the last pass too (run last)\n");
+    pvr_set_bg_color(0.0f, 0.0f, 0.5f);
+    pvr_mp_test_flags = PVR_MP_TEST_LAST_NO_WRITEOUT;
+
+    for(i = 0; i < 2; i++)
+        if(t1_fb[i])
+            fb_fill(t1_fb[i], MAGIC565);
+
+    pvr_wait_ready();
+    pvr_scene_begin();
+    scene_t1();
+    pvr_scene_finish();
+    started = pvr_wait_ready() == 0;
+    done = pvr_wait_render_done() == 0;
+    thd_sleep(200);
+
+    for(i = 0; i < 2; i++) {
+        if(!t1_fb[i])
+            continue;
+
+        for(j = 0; j < 3; j++) {
+            c = fb_pixel(t1_fb[i], t1_probes[j].x, t1_probes[j].y);
+            print_probe(fb_name[i], &t1_probes[j], c);
+            magic &= c == MAGIC565;
+        }
+
+        scene &= near(fb_pixel(t1_fb[i], 176, 240), t1_want[0])
+                 || near(fb_pixel(t1_fb[i], 464, 240), t1_want[1]);
+    }
+
+    printf("HWTEST T1B render started: %s, render-done interrupt: %s, "
+           "frame buffers: %s\n", started ? "yes" : "NO", done ? "yes" : "NO",
+           magic ? "untouched (magenta)" : scene ? "written" : "changed, not the scene");
+    printf("HWTEST T1B RESULT %s\n",
+           magic ? "bit 28 = 1 on the last entry of a tile: tile not written out" :
+           scene ? "bit 28 = 1 on the last entry: tile still written out" :
+           "UNEXPECTED: see probe values");
+    add_summary("T1B bit 28 on last pass:",
+                magic ? (done ? "no writeout" : "no writeout, no IRQ") :
+                scene ? "written" : "UNEXPECTED");
+    pvr_mp_test_flags = 0;
 }
 
 /**** T2: waiting before TA_LIST_CONT ******************************/
@@ -618,7 +618,7 @@ static void test2(void) {
 
     reset_errors();
     pvr_mp_test_flags = PVR_MP_TEST_NO_WAIT;
-    bad_nowait = t2_run("T2-nowait", 400, ref);
+    bad_nowait = t2_run("T2-nowait", 1500, ref);
     errs_nowait = print_errors("T2-nowait");
     pvr_mp_test_flags = 0;
 
@@ -754,7 +754,11 @@ static char t4_classify(const char *tag, uint32_t addr) {
     }
 
     if(red && near(r, RGB(128, 128, 128))) return 'S';
-    if(black && near(r, RGB(191, 191, 191))) return 'O';
+    /* Overwritten: pass 0's opaque quad lost; the translucent quad drawn
+       once (it writes depth, so the second entry's copy fails the depth
+       test) or twice */
+    if(black && (near(r, RGB(128, 128, 128)) || near(r, RGB(191, 191, 191))))
+        return 'O';
     if(red && near(r, RGB(191, 191, 191))) return 'A';
     if(red && near(r, 0)) return 'E';
     return '?';
@@ -949,7 +953,7 @@ static void show_summary(void) {
     int i;
     maple_device_t *cont;
     cont_state_t *st;
-    uint64_t end = timer_ms_gettime64() + 60000;
+    uint64_t end = timer_ms_gettime64() + 15000;
 
     pvr_shutdown();
     vid_set_mode(DM_640x480, PM_RGB565);
@@ -963,7 +967,7 @@ static void show_summary(void) {
         bfont_draw_str(vram_s + (56 + i * 26) * W + 8, W, true, summary[i]);
 
     bfont_draw_str(vram_s + (H - 32) * W + 16, W, true,
-                   "Details on serial. Start or 60 s to exit.");
+                   "Details on serial. Start or 15 s to exit.");
 
     while(timer_ms_gettime64() < end) {
         cont = maple_enum_type(0, MAPLE_FUNC_CONTROLLER);
@@ -1000,6 +1004,7 @@ int main(int argc, char *argv[]) {
     test5();
     test2();
     test4();
+    test1b();
 
     printf("HWTEST done\n");
 
