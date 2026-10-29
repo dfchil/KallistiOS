@@ -24,9 +24,14 @@
 #ifndef __DC_PVR_PVR_MISC_H
 #define __DC_PVR_PVR_MISC_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include <kos/cdefs.h>
+
+#include <dc/pvr/pvr_mem.h>
+#include <dc/pvr/pvr_header.h>
+
 __BEGIN_DECLS
 
 
@@ -74,17 +79,116 @@ static inline uint32_t PVR_PACK_16BIT_UV(float u, float v) {
     rendering process.
 */
 
+/** \defgroup pvr_bg Background Plane
+    \brief          The polygon the PVR draws behind everything else
+    \ingroup        pvr_global
+
+    The PVR fills the area of the screen not covered by any other polygon with
+    the background plane. It is a real polygon: three vertices with a position
+    and a color. The ISP draws it into every
+    tile when it clears the depth buffer, at the depth set with
+    pvr_set_zclip().
+
+    The three vertices do not limit the area that is drawn. They only define a
+    plane, and the plane fills the whole render target: color is extended from the three vertices over the full screen.
+    The vertices may lie anywhere, on screen or not. By default they are the
+    bottom-left, top-left and bottom-right corners of the render target, which
+    is the screen or, while rendering to a texture, the render-to-texture area.
+
+    With the default vertices, the top-right corner lies outside the triangle
+    and gets color(top-left) + color(bottom-right) - color(bottom-left). A
+    gradient along one axis (top to bottom, or left to right) stays in range;
+    a tilted gradient can go below 0 or above 255 there. To keep the colors in
+    range, place the vertices with pvr_set_bg_poly() so that the colors are
+    known where the gradient is extreme, or pick colors that keep all four
+    screen corners in range.
+
+    Shading costs nothing extra: the hardware shades the plane with Gouraud
+    shading whether its vertices have one color or three.
+
+    \note   When FSAA is enabled (see pvr_init_params_t::fsaa_enabled), the
+            render target is twice as wide as the screen, and the x positions
+            given to pvr_set_bg_poly() are in that doubled space, like the
+            positions of all other vertices.
+
+    All the functions in this group take effect from the next frame that
+    begins to render, and the setting stays until it is changed. Call them
+    between frames (e.g. after pvr_wait_ready()), not during a frame.
+*/
+
+/** \brief   Background plane vertex.
+    \ingroup pvr_bg
+
+    One of the three vertices given to pvr_set_bg_poly().
+*/
+typedef struct pvr_bg_vertex {
+    float    x;     /**< \brief X position, in render target pixels */
+    float    y;     /**< \brief Y position, in render target pixels */
+    float    z;     /**< \brief 1/w, must be greater than zero.
+
+                         Used only to interpolate color. Give all three vertices the same value
+                         (e.g. 1.0f) for interpolation that is linear across
+                         the screen. The depth of the plane is the
+                         pvr_set_zclip() value, not this one. */
+    uint32_t argb;  /**< \brief Color, packed ARGB (alpha is ignored) */
+} pvr_bg_vertex_t;
+
 /** \brief   Set the background plane color.
-    \ingroup pvr_global
+    \ingroup pvr_bg
 
     This function sets the color of the area of the screen not covered by any
     other polygons.
 
+    It also returns the background plane to its default: the default vertices,
+    one color everywhere.
+
     \param  r               Red component of the color to set
     \param  g               Green component of the color to set
     \param  b               Blue component of the color to set
+
+    \sa pvr_set_bg_colors(), pvr_set_bg_poly()
 */
 void pvr_set_bg_color(float r, float g, float b);
+
+/** \brief   Set a background plane color for each default vertex.
+    \ingroup pvr_bg
+
+    This function places the background plane's vertices on the bottom-left,
+    top-left and bottom-right corners of the render target and gives each its
+    own color. The plane is shaded with a linear gradient over the whole
+    screen.
+
+    The top-right corner gets top_left + bottom_right - bottom_left, per
+    channel. For a vertical gradient, pass the bottom color twice
+    (bottom_left = bottom_right); for a horizontal one, pass the left color
+    twice (bottom_left = top_left).
+
+    \param  bottom_left     Packed ARGB color at the bottom-left corner
+    \param  top_left        Packed ARGB color at the top-left corner
+    \param  bottom_right    Packed ARGB color at the bottom-right corner
+
+    \sa PVR_PACK_COLOR()
+*/
+void pvr_set_bg_colors(uint32_t bottom_left, uint32_t top_left,
+                       uint32_t bottom_right);
+
+/** \brief   Set the background plane's three vertices.
+    \ingroup pvr_bg
+
+    This function gives full control over the background plane: the position
+    and color of its three vertices. The vertices need not
+    be on screen; they only define the plane, which always fills the whole
+    render target.
+
+    The vertices may be given in either winding order.
+
+    \param  v               The three vertices
+    \retval 0               On success
+    \retval -1              If the vertices are collinear (they do not define
+                            a plane), or a z is not greater than zero. The
+                            background plane is not changed.
+*/
+int pvr_set_bg_poly(const pvr_bg_vertex_t v[3]);
 
 /** \brief   Set cheap shadow parameters.
     \ingroup pvr_global

@@ -182,7 +182,11 @@ typedef struct {
     uint32_t  pclip_left, pclip_right;    // X pixel clip constants
     uint32_t  pclip_top, pclip_bottom;    // Y pixel clip constants
     uint32_t  pclip_x, pclip_y;           // Composited clip constants
-    uint32_t  bg_color;                   // Background color in ARGB format
+
+    // Background plane. All zero (the state after pvr_init) is the default:
+    // black, default vertices.
+    bool      bg_custom;                  // Vertices from pvr_set_bg_poly()?
+    pvr_bg_vertex_t bg_vert[3];           // Vertices (only argb if !bg_custom)
 
     /* Running statistics on the PVR system. All vars are in terms
        of nanoseconds. */
@@ -243,17 +247,16 @@ typedef struct {
 /* There will be exactly one of these in KOS (in pvr_globals.c) */
 extern volatile pvr_state_t pvr_state;
 
-/* Background plane structure */
-typedef struct pvr_bkg_poly {
-    uint32_t    flags1, flags2;
-    uint32_t    dummy;
-    float       x1, y1, z1;
-    uint32_t    argb1;
-    float       x2, y2, z2;
-    uint32_t    argb2;
-    float       x3, y3, z3;
-    uint32_t    argb3;
-} pvr_bkg_poly_t;
+/* Background plane polygon, as the ISP reads it: ISP/TSP instruction word,
+   TSP instruction word, texture control word and three vertices of x, y, z,
+   then u, v if textured, then base color. */
+#define PVR_BKG_VERT_WORDS_MAX  6
+#define PVR_BKG_POLY_WORDS_MAX  (3 + 3 * PVR_BKG_VERT_WORDS_MAX)
+
+/* Space kept free at the end of each TA vertex buffer for the background
+   polygon, which is written straight after the TA's data. */
+#define PVR_BKG_POLY_RESERVE    \
+    __align_up(PVR_BKG_POLY_WORDS_MAX * sizeof(uint32_t), 32)
 
 /**** pvr_buffers.c ***************************************************/
 
