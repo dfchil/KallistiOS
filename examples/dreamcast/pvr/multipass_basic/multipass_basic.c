@@ -8,16 +8,19 @@
    on it. Pass 1 draws a blue opaque cube that cuts through the floor and
    turns behind the wall.
 
-   - With two passes, the cube is depth tested against the floor drawn in
-     pass 0 (the floor cuts the cube), and the red translucency of pass 0
-     survives around the cube. Since all of pass 1 is drawn after all of
-     pass 0, the cube covers the wall even where it is behind it: the wall
-     doesn't write depth.
-   - With one pass, the same polygons go into one set of lists: the
+   - Mode 1, two passes, pass 0 presorted: the cube is depth tested against
+     the floor drawn in pass 0 (the floor cuts the cube), and the red
+     translucency of pass 0 survives around the cube. Since all of pass 1 is
+     drawn after all of pass 0, the cube covers the wall even where it is
+     behind it: the wall doesn't write depth.
+   - Mode 2, one pass: the same polygons go into one set of lists, and the
      translucent wall is blended over the cube where the wall is in front.
+   - Mode 3, two passes, pass 0 autosorted: an autosorted translucent list
+     leaves its polygons' depth in the depth buffer, whatever their depth
+     write setting, so the wall hides the cube where the cube is behind it.
 
-   Controls: A switches between one and two passes (the mode also changes by
-   itself every 5 seconds until A is pressed), Y toggles FSAA, Start exits.
+   Controls: A cycles the modes (the mode also changes by itself every 5
+   seconds until A is pressed), Y toggles FSAA, Start exits.
    The mode and the PVR render time are shown on screen and printed on the
    serial console.
 */
@@ -85,12 +88,13 @@ static void compile_headers(void) {
     pvr_poly_compile(&hdr_tr, &cxt);
 }
 
-/* (Re)initialize the PVR for the given number of passes and FSAA setting */
-static void setup(int passes) {
+/* (Re)initialize the PVR for the given number of passes and FSAA setting.
+   Returns 1 if it did. */
+static int setup(int passes) {
     static int cur_passes = -1, cur_fsaa = -1;
 
     if(passes == cur_passes && fsaa == cur_fsaa)
-        return;
+        return 0;
 
     if(cur_passes >= 0)
         pvr_shutdown();
@@ -106,6 +110,8 @@ static void setup(int passes) {
 
     cur_passes = passes;
     cur_fsaa = fsaa;
+
+    return 1;
 }
 
 static void draw_text(void) {
@@ -248,7 +254,7 @@ int main(int argc, char *argv[]) {
     maple_device_t *cont;
     cont_state_t *st;
     uint32_t prev = 0, pressed;
-    int two_pass = 1, autocycle = 1, frame = 0;
+    int mode = 0, applied = -1, autocycle = 1, frame = 0;
     uint64_t next_switch = timer_ms_gettime64() + 5000;
     float angle = 0.0f;
     pvr_stats_t stats;
@@ -257,7 +263,7 @@ int main(int argc, char *argv[]) {
     (void)argc;
     (void)argv;
 
-    printf("multipass_basic: A = 1/2 passes, Y = FSAA, Start = exit\n");
+    printf("multipass_basic: A = mode, Y = FSAA, Start = exit\n");
 
     for(;;) {
         cont = maple_enum_type(0, MAPLE_FUNC_CONTROLLER);
@@ -269,7 +275,7 @@ int main(int argc, char *argv[]) {
             break;
 
         if(pressed & CONT_A) {
-            two_pass = !two_pass;
+            mode = (mode + 1) % 3;
             autocycle = 0;
         }
 
@@ -277,19 +283,30 @@ int main(int argc, char *argv[]) {
             fsaa = !fsaa;
 
         if(autocycle && timer_ms_gettime64() >= next_switch) {
-            two_pass = !two_pass;
+            mode = (mode + 1) % 3;
             next_switch = timer_ms_gettime64() + 5000;
         }
 
-        setup(two_pass ? 2 : 1);
+        if(setup(mode == 1 ? 1 : 2))
+            applied = -1;
+
+        /* Sort mode of pass 0, set once the previous scene has started
+           rendering so that it applies to the next one. It is kept until
+           changed, and pvr_init() resets it. */
+        if(mode != 1 && applied != mode) {
+            pvr_wait_ready();
+            pvr_set_pass_presort(0, mode == 0);
+            applied = mode;
+        }
 
         /* Refresh the text twice per second, or on a mode change */
         if((frame++ % 30) == 0 || pressed) {
             pvr_get_stats(&stats);
-            snprintf(l1, sizeof(l1), "%s, FSAA %s",
-                     two_pass ? "2 passes: cube in pass-1 OP" :
-                                "1 pass: cube in the same OP",
-                     fsaa ? "on" : "off");
+            snprintf(l1, sizeof(l1), "%d: %s%s", mode + 1,
+                     mode == 0 ? "2 passes, pass 0 presorted" :
+                     mode == 1 ? "1 pass, cube in the same OP" :
+                                 "2 passes, pass 0 autosorted",
+                     fsaa ? ", FSAA" : "");
             /* Right after pvr_init(), there is no render time yet. */
             if(stats.rnd_last_time < 1000000000ULL)
                 snprintf(l2, sizeof(l2), "PVR render %.2f ms  (A/Y/Start)",
@@ -302,7 +319,7 @@ int main(int argc, char *argv[]) {
                 printf("multipass_basic: %s; %s\n", l1, l2);
         }
 
-        do_frame(two_pass, angle);
+        do_frame(mode != 1, angle);
         angle += 0.01f;
     }
 

@@ -16,10 +16,15 @@
    - Mode 2, one pass, presorted translucent list with the shadows first and
      the boxes after them, writing depth: right, but every box pixel goes
      through translucent shading, overdraw included.
-   - Mode 3, two passes: shadows in pass 0's translucent list, boxes in
-     pass 1's opaque list. Pass 1 is drawn after pass 0 and depth tested
-     against pass 0's ground only: right, and the boxes keep the opaque
-     list's deferred shading (each pixel shaded once).
+   - Mode 3, two passes: shadows in pass 0's presorted translucent list,
+     boxes in pass 1's opaque list. Pass 1 is drawn after pass 0 and depth
+     tested against pass 0's ground only: right, and the boxes keep the
+     opaque list's deferred shading (each pixel shaded once).
+   - Mode 4, the same with pass 0 autosorted: an autosorted translucent
+     list leaves its polygons' depth in the depth buffer, whatever their
+     depth write setting, so the too-near shadows hide the boxes again.
+     A pass whose translucent polygons must not hide later passes has to be
+     presorted.
 
    Controls: A cycles the modes (the mode also changes by itself every 5
    seconds until A is pressed), Y toggles FSAA, Start exits. The mode and the
@@ -337,7 +342,8 @@ static void do_frame(int mode, float t) {
             draw_text();
             break;
 
-        case 2:     /* Two passes */
+        case 2:     /* Two passes, pass 0 presorted or autosorted */
+        case 3:
             pvr_list_begin(PVR_LIST_OP_POLY);
             ground();
             pvr_list_begin(PVR_LIST_TR_POLY);
@@ -358,10 +364,11 @@ static void do_frame(int mode, float t) {
 
 /**** Main *********************************************************/
 
-static const char *mode_names[3] = {
+static const char *mode_names[4] = {
     "1 pass, boxes OP: shadows on top",
     "1 pass, boxes in presorted TR",
     "2 passes, boxes in pass-1 OP",
+    "2 passes, pass 0 autosorted",
 };
 
 int main(int argc, char *argv[]) {
@@ -386,7 +393,7 @@ int main(int argc, char *argv[]) {
             break;
 
         if(pressed & CONT_A) {
-            mode = (mode + 1) % 3;
+            mode = (mode + 1) % 4;
             autocycle = 0;
         }
 
@@ -396,18 +403,20 @@ int main(int argc, char *argv[]) {
         }
 
         if(autocycle && timer_ms_gettime64() >= next_switch) {
-            mode = (mode + 1) % 3;
+            mode = (mode + 1) % 4;
             next_switch = timer_ms_gettime64() + 5000;
         }
 
-        if(setup(mode == 2 ? 2 : 1))
+        if(setup(mode >= 2 ? 2 : 1))
             presort = -1;
 
         /* Set the sort mode once the previous scene has started rendering,
-           so that it applies to the next scene. It is kept until changed. */
-        if(presort != (mode == 1)) {
+           so that it applies to the next scene. It is kept until changed.
+           Mode 2 presorts the boxes' list; mode 3 presorts pass 0, the
+           shadows' list. */
+        if(presort != (mode == 1 || mode == 2)) {
             pvr_wait_ready();
-            presort = mode == 1;
+            presort = mode == 1 || mode == 2;
             pvr_set_presort_mode(presort);
         }
 
