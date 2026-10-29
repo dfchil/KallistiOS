@@ -62,13 +62,19 @@ __BEGIN_DECLS
       created with. pvr_shutdown() frees all caches.
 
     \par Hardware status
-    The questions below are open until tested on a console; the answers will
-    be recorded here.
-    - Does the ISP render object lists that live outside the TA's area?
+    Not yet confirmed on a console; examples/dreamcast/pvr/cache_hwtest
+    answers these and the answers will be recorded here. Emulators that
+    don't keep the TA's object lists in VRAM (Flycast) can't render caches,
+    and pvr_cache_build() fails on them.
+    - Does the ISP render object lists that live outside the TA's area,
+      in a TA frame's list slot and as a whole frame?
     - The TA writes object list offsets relative to its parameter write
       address rounded down to 1 MB (lxdream). pvr_cache_build() checks
       this on every build and accepts either rounding, see
       pvr_cache_info_t::ta_param_base.
+    - The ISP's parameter base (PVR_ISP_VERTBUF_ADDR) is read in 1 MB
+      units, and entry offsets have 21 bits. KOS doesn't depend on either:
+      bases are 1 MB-aligned and each copy's offsets stay below 4 MB.
 */
 
 /** \brief   Opaque handle to a cache of object lists.
