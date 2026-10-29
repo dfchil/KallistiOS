@@ -165,10 +165,13 @@ static vec3_t to_camera(vec3_t p) {
     return r;
 }
 
+/* Projection: screen centre and focal lengths */
+static float proj_cx = 320.0f, proj_cy = 240.0f, proj_fx = 400.0f, proj_fy = 400.0f;
+
 /* Screen position and depth (1/z) of a camera-space point */
 static void project_cam(vec3_t c, float *sx, float *sy, float *sz) {
-    *sx = (320.0f + 400.0f * c.x / c.z) * xs;
-    *sy = 240.0f - 400.0f * c.y / c.z;
+    *sx = (proj_cx + proj_fx * c.x / c.z) * xs;
+    *sy = proj_cy - proj_fy * c.y / c.z;
     *sz = 1.0f / c.z;
 }
 
@@ -396,7 +399,7 @@ int main(int argc, char *argv[]) {
 
         if((frame++ % 30) == 0 || pressed) {
             snprintf(l1, sizeof(l1), "%s%s",
-                     two_pass ? "2 passes: object in pass 1, depth reset" :
+                     two_pass ? "2 passes: object after depth reset" :
                                 "1 pass: object clips into the wall",
                      fsaa ? ", FSAA" : "");
             text_render_time(l2, sizeof(l2));

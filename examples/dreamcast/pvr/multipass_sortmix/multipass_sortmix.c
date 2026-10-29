@@ -168,10 +168,13 @@ static vec3_t to_camera(vec3_t p) {
     return r;
 }
 
+/* Projection: screen centre and focal lengths */
+static float proj_cx = 320.0f, proj_cy = 240.0f, proj_fx = 400.0f, proj_fy = 400.0f;
+
 /* Screen position and depth (1/z) of a camera-space point */
 static void project_cam(vec3_t c, float *sx, float *sy, float *sz) {
-    *sx = (320.0f + 400.0f * c.x / c.z) * xs;
-    *sy = 240.0f - 400.0f * c.y / c.z;
+    *sx = (proj_cx + proj_fx * c.x / c.z) * xs;
+    *sy = proj_cy - proj_fy * c.y / c.z;
     *sz = 1.0f / c.z;
 }
 
@@ -323,15 +326,15 @@ static void do_frame(float t) {
 
 /**** Main *********************************************************/
 
-/* Sort mode of pass 0 and pass 1 */
+/* Sort mode of pass 0 (cards) and pass 1 (cloud) */
 static const struct {
     bool presort0, presort1;
     const char *name;
 } modes[4] = {
-    { true, false, "cards presort, cloud autosort: right" },
-    { true, true, "presort both: cloud wrong" },
-    { false, false, "autosort both: card order wrong" },
-    { false, true, "cards autosort, cloud presort: wrong" },
+    { true, false, "presort + autosort: right" },
+    { true, true, "presort + presort: cloud wrong" },
+    { false, false, "autosort + autosort: cards wrong" },
+    { false, true, "autosort + presort: both wrong" },
 };
 
 int main(int argc, char *argv[]) {
