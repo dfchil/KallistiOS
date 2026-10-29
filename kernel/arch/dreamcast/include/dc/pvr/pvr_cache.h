@@ -61,20 +61,38 @@ __BEGIN_DECLS
     - Caches are tied to the tile layout (screen size and FSAA) they were
       created with. pvr_shutdown() frees all caches.
 
-    \par Hardware status
-    Not yet confirmed on a console; examples/dreamcast/pvr/cache_hwtest
-    answers these and the answers will be recorded here. Emulators that
-    don't keep the TA's object lists in VRAM (Flycast) can't render caches,
-    and pvr_cache_build() fails on them.
-    - Does the ISP render object lists that live outside the TA's area,
-      in a TA frame's list slot and as a whole frame?
-    - The TA writes object list offsets relative to its parameter write
-      address rounded down to 1 MB (lxdream). pvr_cache_build() checks
-      this on every build and accepts either rounding, see
-      pvr_cache_info_t::ta_param_base.
-    - The ISP's parameter base (PVR_ISP_VERTBUF_ADDR) is read in 1 MB
-      units, and entry offsets have 21 bits. KOS doesn't depend on either:
-      bases are 1 MB-aligned and each copy's offsets stay below 4 MB.
+    \par Hardware results
+    Tested on a Dreamcast console with examples/dreamcast/pvr/cache_hwtest
+    (2026-10-29):
+    - The ISP renders object lists anywhere in the 32-bit VRAM view: a
+      hand-built list in the punch-through slot of TA frames from both TA
+      buffers, and as a whole frame from its own region array.
+    - The ISP's parameter base (PVR_ISP_VERTBUF_ADDR) is masked to 1 MB:
+      0x410000 and 0x480000 both read as 0x400000.
+    - Object list entry offsets have 21 bits (words): an entry with bit 20
+      set reaches parameters more than 4 MB above the base. KOS doesn't
+      depend on this: each copy's offsets stay below 4 MB.
+    - The TA writes its offsets relative to its parameter write start
+      (TA_ISP_BASE) rounded down to 1 MB, as lxdream does.
+      pvr_cache_build() checks this on every build (see
+      pvr_cache_info_t::ta_param_base).
+    - TA-built caches, with overflow blocks, render pixel-identical to the
+      same polygons sent through the TA's punch-through list, from both TA
+      buffers, after a rebuild and after many TA frames, with FSAA and
+      vertex double-buffering on and off.
+    - Reserving R bytes takes exactly 2R from texture memory, and textures
+      next to the reserve are unharmed.
+
+    \par Performance
+    Punch-through polygons cost the ISP far more than opaque ones (10000
+    16x16 quads: 8.8 ms opaque, 49 ms punch-through), and a cache in the
+    punch-through slot renders exactly as slowly as the same polygons sent
+    as punch-through. The slot saves CPU and TA time, not render time.
+    Prefer opaque and translucent lists for caches rendered as whole
+    frames.
+
+    Emulators that don't keep the TA's object lists in VRAM (Flycast) can't
+    render caches, and pvr_cache_build() fails on them.
 */
 
 /** \brief   Opaque handle to a cache of object lists.
@@ -217,6 +235,8 @@ int pvr_cache_build(pvr_cache_t *cache, void (*send)(void *data), void *data);
     draws it. The list must be disabled for the TA and present in the cache.
     Punch-through is the usual choice: it is drawn after the opaque list and
     before the translucent one, depth-tested against the opaque polygons.
+    It saves the CPU and TA time of the cached polygons, but the ISP renders
+    punch-through polygons several times slower than opaque ones.
 
     \param  cache           The cache to attach, or NULL to detach whatever
                             is attached to \p target.
