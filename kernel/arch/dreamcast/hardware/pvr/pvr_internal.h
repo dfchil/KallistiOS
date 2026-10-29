@@ -112,6 +112,9 @@
 
  */
 
+/* Largest tile grid the region array can address (6-bit tile x and y) */
+#define PVR_TILE_MAX    64
+
 /* Total number of OPBs. Matches the count of pvr_list_t elements */
 #define PVR_OPB_COUNT   5
 
@@ -132,6 +135,8 @@ typedef struct {
     uint32_t  opb_addresses[PVR_OPB_COUNT];        /* Object pointer buffers (of each type) */
     uint32_t  tile_matrix, tile_matrix_size;  /* Tile matrix, size */
     uint32_t  opb_overflow_count;             /* Extra OPB space after opb_size for TA overflow */
+    bool      tile_matrix_dirty;              /* Per-tile tables changed since the last build */
+    bool      tile_matrix_skips;              /* Built with skipped tiles left out */
 } pvr_ta_buffers_t;
 
 // DMA buffers structure: we have two sets of these
@@ -194,6 +199,11 @@ typedef struct {
     uint32_t  pclip_top, pclip_bottom;    // Y pixel clip constants
     uint32_t  pclip_x, pclip_y;           // Composited clip constants
     uint32_t  bg_color;                   // Background color in ARGB format
+
+    // Per-tile region array state: bit x of row y is tile (x, y).
+    uint64_t  tile_presort[PVR_TILE_MAX]; // Tile presorts its TR list
+    uint64_t  tile_skipped[PVR_TILE_MAX]; // Tile left out of the region array
+    int       tiles_skipped;              // Number of bits set in tile_skipped
 
     /* Running statistics on the PVR system. All vars are in terms
        of nanoseconds. */
@@ -273,6 +283,10 @@ void pvr_allocate_buffers(const pvr_init_params_t *params);
 
 /* Fill the tile matrices (after it's initialized) */
 void pvr_init_tile_matrices(bool presort);
+
+/* Rebuild the tile matrix of the TA buffer about to be filled, if the
+   per-tile state changed since it was last built */
+void pvr_update_tile_matrix(void);
 
 
 /**** pvr_misc.c ******************************************************/

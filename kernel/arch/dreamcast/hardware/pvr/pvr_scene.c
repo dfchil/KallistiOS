@@ -110,6 +110,10 @@ static void pvr_start_ta_rendering(void) {
         pvr_state.to_txr_stride_px = pvr_state.next_to_txr_stride_px;
         pvr_state.to_txr_addr = pvr_state.next_to_txr_addr;
 
+        // No render reads this TA buffer's tile matrix now, so bring it up
+        // to date with the per-tile state.
+        pvr_update_tile_matrix();
+
         // Starting from that point, we consider that the Tile Accelerator
         // might be busy.
         pvr_state.ta_busy = 1;
