@@ -292,7 +292,9 @@ void pvr_sync_tile_matrix(int which);
 #define PVR_RA_LAST         BIT(31)     /* Last entry of the array */
 #define PVR_RA_ZKEEP        BIT(30)     /* Keep depth (and colour) from the previous entry */
 #define PVR_RA_PRESORT      BIT(29)     /* Presort the TR list of this entry */
-#define PVR_RA_NO_WRITEOUT  BIT(28)     /* Keep the tile on chip after this entry */
+#define PVR_RA_NO_WRITEOUT  BIT(28)     /* Don't write the tile out after this entry
+                                           (never on a tile's last entry: then
+                                           the render-done IRQ doesn't come) */
 #define PVR_RA_TILE_Y(y)    ((uint32_t)(y) << 8)
 #define PVR_RA_TILE_X(x)    ((uint32_t)(x) << 2)
 #define PVR_RA_FLAGS_MASK   (PVR_RA_ZKEEP | PVR_RA_PRESORT | PVR_RA_NO_WRITEOUT)
@@ -342,16 +344,6 @@ void pvr_ra_set_flags(uint32_t tile_matrix, int tw, int th, int pass_count,
    PVR_RA_ZKEEP on all passes but the first, PVR_RA_NO_WRITEOUT on all but
    the last. */
 uint32_t pvr_ra_pass_flags(int p, int pass_count, bool presort);
-
-
-/* Hardware test hooks of the multipass implementation (pvr_scene.c). Not part
-   of the API: examples/dreamcast/pvr/multipass_hwtest sets them to answer
-   open questions about the hardware. */
-extern volatile uint32_t pvr_mp_test_flags;
-#define PVR_MP_TEST_NO_WAIT             BIT(0)  /* Don't wait for a pass's list-done IRQs before TA_LIST_CONT */
-#define PVR_MP_TEST_NO_OL_BASE          BIT(1)  /* Don't move TA_OL_BASE to the next pass's first OPBs */
-#define PVR_MP_TEST_LAST_NO_WRITEOUT    BIT(2)  /* Set PVR_RA_NO_WRITEOUT on the last pass too */
-#define PVR_MP_TEST_ALL_WRITEOUT        BIT(3)  /* Clear PVR_RA_NO_WRITEOUT on every pass */
 
 
 /**** pvr_misc.c ******************************************************/

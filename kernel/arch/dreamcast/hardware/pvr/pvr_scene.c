@@ -345,25 +345,22 @@ static int pvr_pass_wait(int pass) {
     return 0;
 }
 
-/* Hardware test hooks, see pvr_internal.h */
-volatile uint32_t pvr_mp_test_flags;
-
 /* Move the TA on to the next pass of a closed pass. */
 static void pvr_pass_continue(void) {
     volatile pvr_ta_buffers_t *buf;
     int pass = pvr_state.pass_cur + 1;
 
-    /* Let the TA finish the lists of the closed pass first. */
-    if(!(pvr_mp_test_flags & PVR_MP_TEST_NO_WAIT))
-        pvr_pass_wait(pvr_state.pass_cur);
+    /* Let the TA finish the lists of the closed pass first. On hardware,
+       writing TA_LIST_CONT while the TA was still binning gave the same
+       picture, but the wait is short and keeps it safe. */
+    pvr_pass_wait(pvr_state.pass_cur);
 
     /* The next pass's object lists start in that pass's first OPBs, which
-       its region array entries point to; then restart list input. Overflow
+       its region array entries point to (without this, the TA overwrites
+       the previous pass's first OPBs); then restart list input. Overflow
        OPBs keep being allocated from where the earlier passes left off. */
     buf = pvr_state.ta_buffers + pvr_state.ta_target;
-
-    if(!(pvr_mp_test_flags & PVR_MP_TEST_NO_OL_BASE))
-        PVR_SET(PVR_TA_OPB_START, buf->opb + buf->opb_size * pass);
+    PVR_SET(PVR_TA_OPB_START, buf->opb + buf->opb_size * pass);
 
     PVR_SET(PVR_TA_LIST_CONT, BIT(31));
     (void)PVR_GET(PVR_TA_LIST_CONT);
