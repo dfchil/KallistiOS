@@ -92,25 +92,38 @@ static inline uint32_t PVR_PACK_16BIT_UV(float u, float v) {
     The three vertices do not limit the area that is drawn. They only define a
     plane, and the plane fills the whole render target: color (and texture
     coordinates) are extended from the three vertices over the full screen.
-    The vertices may lie anywhere, on screen or not. By default they are the
+    The vertices may lie anywhere, on screen or not: the hardware accepts
+    vertices far off screen (tested at +-10000 pixels), in either winding, and
+    even a triangle smaller than a pixel. By default they are the
     bottom-left, top-left and bottom-right corners of the render target, which
     is the screen or, while rendering to a texture, the render-to-texture area.
 
     With the default vertices, the top-right corner lies outside the triangle
     and gets color(top-left) + color(bottom-right) - color(bottom-left). A
     gradient along one axis (top to bottom, or left to right) stays in range;
-    a tilted gradient can go below 0 or above 255 there. To keep the colors in
-    range, place the vertices with pvr_set_bg_poly() so that the colors are
-    known where the gradient is extreme, or pick colors that keep all four
-    screen corners in range.
+    a tilted gradient can go below 0 or above 255 there. The hardware clamps
+    each channel to 0..255 (it does not wrap), so such a gradient saturates
+    and goes flat towards that corner. To keep the whole gradient visible,
+    place the vertices with pvr_set_bg_poly() so that the colors are known
+    where the gradient is extreme, or pick colors that keep all four screen
+    corners in range.
 
     Shading costs nothing extra: the hardware shades the plane with Gouraud
-    shading whether its vertices have one color or three.
+    shading whether its vertices have one color or three, and the render time
+    of a gradient is the same as that of a flat color.
+
+    In a 16-bit (RGB565) frame buffer a slow gradient shows bands one color
+    step wide, clearly visible on a sky or a grey ramp, with a green tint on
+    every other band of a grey ramp (green has 6 bits, red and blue 5).
+    The PVR's dithering, which vid_set_mode() turns on for 16-bit modes,
+    hides them well.
 
     \note   When FSAA is enabled (see pvr_init_params_t::fsaa_enabled), the
             render target is twice as wide as the screen, and the x positions
             given to pvr_set_bg_poly() are in that doubled space, like the
-            positions of all other vertices.
+            positions of all other vertices. The default vertices are
+            placed accordingly, so pvr_set_bg_colors() covers the screen
+            with FSAA on or off.
 
     All the functions in this group take effect from the next frame that
     begins to render, and the setting stays until it is changed. Call them
@@ -127,11 +140,15 @@ typedef struct pvr_bg_vertex {
     float    y;     /**< \brief Y position, in render target pixels */
     float    z;     /**< \brief 1/w, must be greater than zero.
 
-                         Used to interpolate color and texture coordinates.
-                         Give all three vertices the same value for
-                         interpolation that is linear across the screen; the
-                         default vertices use FLT_EPSILON. The depth the plane
-                         is drawn at is the pvr_set_zclip() value. */
+                         Used only to interpolate color and texture
+                         coordinates. Give all three vertices the same value
+                         (any, e.g. 1.0f; the default vertices use
+                         FLT_EPSILON) for interpolation that is linear across
+                         the screen. Different values give perspective-correct
+                         interpolation, as for other polygons. The z values do
+                         not change the depth of the plane: it is always the
+                         pvr_set_zclip() value, so the plane stays behind all
+                         geometry whatever z is given here. */
     float    u;     /**< \brief Texture U coordinate (textured plane only) */
     float    v;     /**< \brief Texture V coordinate (textured plane only) */
     uint32_t argb;  /**< \brief Color, packed ARGB (alpha is ignored) */
@@ -206,8 +223,16 @@ int pvr_set_bg_poly(const pvr_bg_vertex_t v[3]);
     This function textures the background plane, giving a full-screen backdrop
     without any geometry. The texture coordinates are those of the vertices:
     stretched once over the render target after pvr_set_bg_colors(), or as
-    given to pvr_set_bg_poly(). Texture coordinates outside 0 to 1 repeat the
-    texture.
+    given to pvr_set_bg_poly(). Like the color, the texture coordinates
+    extend over the whole render target, outside the triangle too. Texture
+    coordinates outside 0 to 1 repeat the texture.
+
+    The texture costs render time like a textured polygon over the visible
+    background does, mostly in texture cache misses. Over a 640x480 screen,
+    measured against a flat background (about 3.15 ms): an 8x8 or 64x64
+    texture costs nothing, 256x256 stretched over the screen 0.2 ms (nearest)
+    or 0.85 ms (bilinear), 1024x1024 stretched 3.7 ms, and 1024x1024 at one
+    texel per pixel 1.1 ms (nearest) or 2.4 ms (bilinear).
 
     The texture is modulated by the vertex colors (use white, 0xffffffff, for
     the texture's own colors). Its alpha is ignored. Mipmaps are not used.
