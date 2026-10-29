@@ -5,6 +5,10 @@ all: rm-elf $(TARGET)
 
 include $(KOS_BASE)/Makefile.rules
 
+ifdef HWTEST_ONLY
+KOS_CFLAGS += -DHWTEST_ONLY=$(HWTEST_ONLY)
+endif
+
 clean: rm-elf
 	-rm -f $(OBJS)
 

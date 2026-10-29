@@ -7,6 +7,7 @@
    renders into a texture and reads the pixels back, so the answers come out
    on the serial console without looking at the screen. A summary is shown
    on screen at the end. Grep the console for "Q1".."Q4" and "RESULT".
+   "make HWTEST_ONLY=n" builds a version that asks question n alone.
 
    Q1  Does the ISP render object lists that live outside the TA's area?
        A hand-built cache (one quad, one tile) in the punch-through slot of
@@ -32,6 +33,10 @@
 #include <dc/biosfont.h>
 #include <dc/maple.h>
 #include <dc/maple/controller.h>
+
+#ifndef HWTEST_ONLY
+#define HWTEST_ONLY 0
+#endif
 
 #define RTT_W       640
 #define RTT_H       480
@@ -907,7 +912,7 @@ static void q4(void) {
     uint32_t tbase, a, lo_end, bad;
     pvr_ptr_t blocks[64];
     size_t sizes[64];
-    int nblocks = 0, i, x, y, ok = 1, cx, cy;
+    int nblocks = 0, i, x, y, ok = 1, cx, cy, cache_ok, tex_ok;
     volatile uint32_t *t;
 
     printf("\nQ4: reserve layout\n");
@@ -1047,51 +1052,59 @@ static void q4(void) {
     cp.opb_overflow_count = 6;
     c = pvr_cache_create(&cp);
 
-    if(!c || pvr_cache_build(c, build_pattern, &pat) < 0 ||
-            pvr_cache_attach(c, PVR_CACHE_SLOT(PVR_LIST_PT_POLY)) < 0) {
-        LOG("Q4 FAIL: cache setup\n");
-        ok = 0;
-    }
-    else {
-        reference = malloc(RTT_W * RTT_H * 2);
+    cache_ok = c && pvr_cache_build(c, build_pattern, &pat) == 0 &&
+               pvr_cache_attach(c, PVR_CACHE_SLOT(PVR_LIST_PT_POLY)) == 0;
 
-        /* Where the cache draws by itself */
-        rtt_frame(NULL, NULL);
-        save_reference();
+    if(!cache_ok)
+        LOG("Q4 cache build failed (see Q3): texture checked without a cache\n");
 
-        for(i = 0; i < 4; i++) {
-            /* Frames 0-1 with the cache attached, 2-3 without */
-            if(i == 2)
-                pvr_cache_attach(NULL, PVR_CACHE_SLOT(PVR_LIST_PT_POLY));
+    reference = malloc(RTT_W * RTT_H * 2);
 
-            rtt_frame(q4_op, NULL);
-            bad = 0;
+    /* Where the cache draws by itself */
+    rtt_frame(NULL, NULL);
+    save_reference();
+    tex_ok = 1;
 
-            for(cy = 4; cy < 64; cy += 8) {
-                for(cx = 4; cx < 64; cx += 8) {
-                    int X = 128 + cx, Y = 128 + cy;
+    for(i = 0; i < 4; i++) {
+        /* Frames 0-1 with the cache attached, 2-3 without */
+        if(i < 2 && !cache_ok)
+            continue;
 
-                    /* Skip cells the cache's polygons cover (they are in
-                       front of the texture) */
-                    if(i < 2 && reference[Y * RTT_W + X] != C_BLACK)
-                        continue;
+        if(i == 2)
+            pvr_cache_attach(NULL, PVR_CACHE_SLOT(PVR_LIST_PT_POLY));
 
-                    if(px(X, Y) != q4_texel(cx, cy))
-                        bad++;
-                }
+        rtt_frame(q4_op, NULL);
+        bad = 0;
+
+        for(cy = 4; cy < 64; cy += 8) {
+            for(cx = 4; cx < 64; cx += 8) {
+                int X = 128 + cx, Y = 128 + cy;
+
+                /* Skip cells the cache's polygons cover (they are in
+                   front of the texture) */
+                if(i < 2 && reference[Y * RTT_W + X] != C_BLACK)
+                    continue;
+
+                if(px(X, Y) != q4_texel(cx, cy))
+                    bad++;
             }
-
-            printf("Q4   textured quad, cache %s, frame %d: %lu cells wrong\n",
-                   i < 2 ? "attached" : "detached", i, (unsigned long)bad);
-
-            if(bad)
-                ok = 0;
         }
 
-        free(reference);
+        printf("Q4   textured quad, cache %s, frame %d: %lu cells wrong\n",
+               i < 2 ? "attached" : "detached", i, (unsigned long)bad);
 
-        LOG("Q4 texture at start of texture memory renders: %s\n", ok ? "ok" : "WRONG");
+        if(bad)
+            tex_ok = 0;
     }
+
+    free(reference);
+    reference = NULL;
+
+    LOG("Q4 texture at start of texture memory renders: %s\n",
+        tex_ok ? "ok" : "WRONG");
+
+    if(!tex_ok)
+        ok = 0;
 
     pvr_cache_attach(NULL, PVR_CACHE_SLOT(PVR_LIST_PT_POLY));
     pvr_cache_free(c);
@@ -1143,7 +1156,7 @@ static void show_summary(void) {
                      txt, PVR_FILTER_NONE);
     pvr_poly_compile(&hdr, &cxt);
 
-    for(frames = 0; frames < 60 * 30; frames++) {
+    for(frames = 0; frames < 60 * 10; frames++) {
         cont = maple_enum_type(0, MAPLE_FUNC_CONTROLLER);
 
         if(cont && (st = maple_dev_status(cont)) && (st->buttons & CONT_START))
@@ -1184,10 +1197,18 @@ int main(int argc, char **argv) {
 
     printf("cache_hwtest: cached object lists, hardware questions\n");
 
-    q1();
-    q2();
-    q3();
-    q4();
+    /* Build with HWTEST_ONLY=n to run question n alone */
+    if(!HWTEST_ONLY || HWTEST_ONLY == 1)
+        q1();
+
+    if(!HWTEST_ONLY || HWTEST_ONLY == 2)
+        q2();
+
+    if(!HWTEST_ONLY || HWTEST_ONLY == 3)
+        q3();
+
+    if(!HWTEST_ONLY || HWTEST_ONLY == 4)
+        q4();
 
     printf("\nRESULT Q1=%s Q2=%s Q3=%s Q4=%s\n", rstr(result[1]), rstr(result[2]),
            rstr(result[3]), rstr(result[4]));
