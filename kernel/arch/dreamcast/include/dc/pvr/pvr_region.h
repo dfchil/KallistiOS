@@ -68,9 +68,11 @@ __BEGIN_DECLS
     pvr_scene_finish() in DMA mode). A change made while a scene is being
     registered applies from the next scene on. pvr_set_presort_mode() is the
     exception: as before, it also applies to the scene being registered.
-    Rewriting an array costs one uncached write per word, 6 words per tile
-    (about 7 KB at 640x480, twice that with FSAA), and only happens after
-    something changed.
+    An array is rewritten only when it doesn't match the per-tile state, so
+    a program may set its whole layout every frame: if the result is the
+    same as before, nothing is written. A rewrite costs one uncached write
+    per word, 6 words per tile (about 7 KB at 640x480, twice that with
+    FSAA).
 
     \par Render to texture
     Scenes begun with pvr_scene_begin_txr() or pvr_scene_begin_rtt() use the
