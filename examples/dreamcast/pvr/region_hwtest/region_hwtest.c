@@ -941,11 +941,12 @@ int main(int argc, char *argv[]) {
         return 0;
     }
 
-    /* Show the results until Start or 20 seconds */
+    /* Show the results until Start or 5 seconds, then exit (back to the
+       loader) */
     pvr_set_rect_enabled(0, 0, SCREEN_W, 480, true);
     say(0, "Done. Start to exit.");
 
-    for(i = 0; i < 20 * 60; i++) {
+    for(i = 0; i < 5 * 60; i++) {
         if((cont = maple_enum_type(0, MAPLE_FUNC_CONTROLLER)) &&
            (st = (cont_state_t *)maple_dev_status(cont)) &&
            (st->buttons & CONT_START))
