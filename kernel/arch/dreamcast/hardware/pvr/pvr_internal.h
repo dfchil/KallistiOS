@@ -351,6 +351,7 @@ extern volatile uint32_t pvr_mp_test_flags;
 #define PVR_MP_TEST_NO_WAIT             BIT(0)  /* Don't wait for a pass's list-done IRQs before TA_LIST_CONT */
 #define PVR_MP_TEST_NO_OL_BASE          BIT(1)  /* Don't move TA_OL_BASE to the next pass's first OPBs */
 #define PVR_MP_TEST_LAST_NO_WRITEOUT    BIT(2)  /* Set PVR_RA_NO_WRITEOUT on the last pass too */
+#define PVR_MP_TEST_ALL_WRITEOUT        BIT(3)  /* Clear PVR_RA_NO_WRITEOUT on every pass */
 
 
 /**** pvr_misc.c ******************************************************/

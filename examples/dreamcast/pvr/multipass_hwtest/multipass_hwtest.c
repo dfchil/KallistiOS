@@ -58,6 +58,7 @@ extern volatile uint32_t pvr_mp_test_flags;
 #define PVR_MP_TEST_NO_WAIT             (1 << 0)
 #define PVR_MP_TEST_NO_OL_BASE          (1 << 1)
 #define PVR_MP_TEST_LAST_NO_WRITEOUT    (1 << 2)
+#define PVR_MP_TEST_ALL_WRITEOUT        (1 << 3)
 
 #define W 640
 #define H 480
@@ -355,6 +356,27 @@ static int t1_classify(const char *tag, uint32_t addr, int texture) {
     return ok ? 1 : magic ? 0 : -1;
 }
 
+/* Average render time in microseconds of the T1 scene with the given hooks */
+static uint64_t t1_time(uint32_t flags) {
+    pvr_stats_t st;
+    uint64_t sum = 0;
+    int i;
+
+    pvr_mp_test_flags = flags;
+    render(scene_t1, 0);
+    render(scene_t1, 0);
+
+    for(i = 0; i < 32; i++) {
+        render(scene_t1, 0);
+        pvr_get_stats(&st);
+        sum += st.rnd_last_time;
+    }
+
+    pvr_mp_test_flags = 0;
+
+    return sum / 32 / 1000;
+}
+
 static void test1(void) {
     uint32_t addr, fb[2] = { 0, 0 };
     int i, r, a_ok = 1, b_fb, b_tx, rec = 1;
@@ -429,6 +451,27 @@ static void test1(void) {
 
     printf("HWTEST T1C recovery after T1B: %s\n", rec ? "PASS" : "FAIL");
     add_summary("T1C recovery:", rec ? "PASS" : "FAIL");
+
+    /* D: bit 28 clear on every pass (the tile is written out after each
+       pass): is the picture still right? And render times of the three
+       settings: bit 28 on the first pass (default), on no pass, on both. */
+    pvr_mp_test_flags = PVR_MP_TEST_ALL_WRITEOUT;
+    r = 1;
+    for(i = 0; i < 4; i++) {
+        addr = render(scene_t1, 0);
+        if(i >= 2 && t1_classify("T1D-fb", addr, 0) != 1)
+            r = 0;
+    }
+    pvr_mp_test_flags = 0;
+    printf("HWTEST T1D bit 28 clear on every pass (writeout after each "
+           "pass): picture %s\n", r ? "right" : "WRONG");
+    add_summary("T1D writeout after each pass:", r ? "picture right" : "WRONG");
+
+    printf("HWTEST T1E average render time (us): bit 28 on pass 0 only %lu, "
+           "on no pass %lu, on both passes %lu\n",
+           (unsigned long)t1_time(0),
+           (unsigned long)t1_time(PVR_MP_TEST_ALL_WRITEOUT),
+           (unsigned long)t1_time(PVR_MP_TEST_LAST_NO_WRITEOUT));
     print_errors("T1");
 }
 
