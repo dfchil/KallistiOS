@@ -121,6 +121,7 @@ typedef struct {
     uint32_t  opb_addresses[PVR_OPB_COUNT];        /* Object pointer buffers (of each type) */
     uint32_t  tile_matrix, tile_matrix_size;  /* Tile matrix, size */
     uint32_t  opb_overflow_count;             /* Extra OPB space after opb_size for TA overflow */
+    uint32_t  tile_matrix_presort;            /* Pass presort mask the tile matrix was written with */
 } pvr_ta_buffers_t;
 
 // DMA buffers structure: we have two sets of these
@@ -161,6 +162,12 @@ typedef struct {
     uint32_t  lists_closed;             // (1 << idx) for each list which the SH4 has lost interest in
     uint32_t  lists_transferred;        // (1 << idx) for each list which has completely transferred to the TA
     uint32_t  lists_dmaed;              // (1 << idx) for each list which has been DMA'd (DMA mode only)
+    uint8_t   lists_done[PVR_OPB_COUNT];// Done interrupts received for each list in this scene (one per pass)
+
+    // Multipass state
+    int       pass_count;               // Render passes per scene (>= 1)
+    int       pass_cur;                 // Pass being submitted
+    uint32_t  pass_presort;             // (1 << pass) for each pass whose TR list is presorted
 
     semaphore_t         dma_lock;       // Locked if a DMA is in progress (vertex or texture)
     int     ta_checked_ready;           // >0 if the TA has been checked to be ready for the new scene
@@ -261,7 +268,89 @@ typedef struct pvr_bkg_poly {
 void pvr_allocate_buffers(const pvr_init_params_t *params);
 
 /* Fill the tile matrices (after it's initialized) */
-void pvr_init_tile_matrices(bool presort);
+void pvr_init_tile_matrices(void);
+
+/* Rewrite the presort bits of a TA buffer's tile matrix if they don't match
+   pvr_state.pass_presort. */
+void pvr_sync_tile_matrix_presort(int which);
+
+/* Region array (tile matrix) writer.
+
+   The region array is a zero header of PVR_TILE_MATRIX_HEADER_SIZE bytes,
+   a dummy entry, then one or more entries per tile. Each entry is six words:
+   a control word and the addresses of the tile's first object pointer block
+   for the OP, OP modifier, TR, TR modifier and PT lists, in that order. A
+   list address with bit 31 set (PVR_RA_LIST_EMPTY) means an empty list.
+
+   Tiles are written in column order (x outer, y inner). A tile gets one
+   entry per pass, consecutive and in pass order. */
+
+#define PVR_TILE_MATRIX_HEADER_SIZE 0x48
+
+#define PVR_RA_ENTRY_WORDS  6           /* Words per region array entry */
+
+#define PVR_RA_LAST         BIT(31)     /* Last entry of the array */
+#define PVR_RA_ZKEEP        BIT(30)     /* Keep depth (and colour) from the previous entry */
+#define PVR_RA_PRESORT      BIT(29)     /* Presort the TR list of this entry */
+#define PVR_RA_NO_WRITEOUT  BIT(28)     /* Keep the tile on chip after this entry */
+#define PVR_RA_TILE_Y(y)    ((uint32_t)(y) << 8)
+#define PVR_RA_TILE_X(x)    ((uint32_t)(x) << 2)
+#define PVR_RA_FLAGS_MASK   (PVR_RA_ZKEEP | PVR_RA_PRESORT | PVR_RA_NO_WRITEOUT)
+
+#define PVR_RA_LIST_EMPTY   0x80000000
+
+/* One pass of the region array, i.e. one entry per tile. */
+typedef struct pvr_ra_pass {
+    /* Control word flags for this pass's entries: any of PVR_RA_ZKEEP,
+       PVR_RA_PRESORT and PVR_RA_NO_WRITEOUT. The writer adds the tile
+       position, and PVR_RA_LAST on the final entry of the array. */
+    uint32_t    flags;
+
+    /* VRAM address (32-bit area offset) of the first object pointer block of
+       tile 0 for each list, or PVR_RA_LIST_EMPTY. Tile n's block is at
+       opb[list] + bin_size[list] * n, n = tw * y + x. */
+    uint32_t    opb[PVR_OPB_COUNT];
+} pvr_ra_pass_t;
+
+/* Write a full region array at VRAM offset tile_matrix (the address that
+   goes into PVR_ISP_TILEMAT_ADDR; the header goes before it): the dummy
+   entry, then pass_count entries per tile of a tw x th grid, entry p taking
+   its flags and list bases from passes[p]. bin_size[list] is the first-block
+   size of each list in bytes. Returns the size in bytes from tile_matrix to
+   the end of the array. */
+size_t pvr_ra_write(uint32_t tile_matrix, int tw, int th,
+                    const int bin_size[PVR_OPB_COUNT],
+                    const pvr_ra_pass_t *passes, int pass_count);
+
+/* Size in bytes from tile_matrix to the end of such an array. */
+#define PVR_RA_SIZE(tw, th, pass_count) \
+    (4 * PVR_RA_ENTRY_WORDS * (1 + (tw) * (th) * (pass_count)))
+
+/* Address (32-bit area offset) of the entry of tile (x, y), pass p. */
+#define PVR_RA_ENTRY(tile_matrix, th, pass_count, x, y, p) \
+    ((tile_matrix) + 4 * PVR_RA_ENTRY_WORDS * \
+     (1 + ((x) * (th) + (y)) * (pass_count) + (p)))
+
+/* Rewrite the control word of every entry of pass p of an array written by
+   pvr_ra_write() (same tw, th and pass_count), with the given flags. Writes
+   whole control words without reading VRAM; sets PVR_RA_LAST again on the
+   final entry. */
+void pvr_ra_set_flags(uint32_t tile_matrix, int tw, int th, int pass_count,
+                      int p, uint32_t flags);
+
+/* Control word flags of pass p in a pass_count-pass scene, presorted or not:
+   PVR_RA_ZKEEP on all passes but the first, PVR_RA_NO_WRITEOUT on all but
+   the last. */
+uint32_t pvr_ra_pass_flags(int p, int pass_count, bool presort);
+
+
+/* Hardware test hooks of the multipass implementation (pvr_scene.c). Not part
+   of the API: examples/dreamcast/pvr/multipass_hwtest sets them to answer
+   open questions about the hardware. */
+extern volatile uint32_t pvr_mp_test_flags;
+#define PVR_MP_TEST_NO_WAIT             BIT(0)  /* Don't wait for a pass's list-done IRQs before TA_LIST_CONT */
+#define PVR_MP_TEST_NO_OL_BASE          BIT(1)  /* Don't move TA_OL_BASE to the next pass's first OPBs */
+#define PVR_MP_TEST_LAST_NO_WRITEOUT    BIT(2)  /* Set PVR_RA_NO_WRITEOUT on the last pass too */
 
 
 /**** pvr_misc.c ******************************************************/

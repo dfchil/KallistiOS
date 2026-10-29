@@ -15,6 +15,7 @@
 #include <kos/genwait.h>
 #include <kos/regfield.h>
 #include <kos/thread.h>
+#include <arch/timer.h>
 #include <dc/pvr.h>
 #include <dc/sq.h>
 #include "pvr_internal.h"
@@ -25,6 +26,9 @@
 #else
 #  define PVR_DEBUG 1
 #endif
+
+/* How long to wait for the TA to finish the lists of a render pass */
+#define PVR_PASS_TIMEOUT_US 100000
 
 /*
 
@@ -102,6 +106,9 @@ static void pvr_start_ta_rendering(void) {
         if(!pvr_state.vbuf_doublebuf)
             pvr_wait_render_done();
 
+        // Bring the tile matrix's sort modes up to date.
+        pvr_sync_tile_matrix_presort(pvr_state.ta_target);
+
         pvr_state.ta_checked_ready = 1;
         pvr_state.curr_to_texture = pvr_state.next_to_texture;
         pvr_state.to_txr_rp = pvr_state.next_to_txr_rp;
@@ -124,6 +131,7 @@ void pvr_scene_begin(void) {
     pvr_state.next_to_texture = 0;
     pvr_state.ta_checked_ready = 0;
     pvr_state.lists_closed = 0;
+    pvr_state.pass_cur = 0;
 
     // Get general stuff ready.
     pvr_state.list_reg_open = PVR_LIST_NONE;
@@ -293,6 +301,97 @@ int pvr_list_flush(pvr_list_t list) {
     return -1;
 }
 
+/* Close the current pass: close the open list, if any, and submit blank lists
+   for the enabled lists that weren't submitted in it. Every first OPB of the
+   pass is then terminated, and every enabled list will raise its done
+   interrupt. */
+static void pvr_pass_close(void) {
+    int i;
+
+    /* If a list was open, close it */
+    if(pvr_state.list_reg_open != PVR_LIST_NONE)
+        pvr_list_finish();
+
+    /* If any lists weren't submitted, then submit blank ones now */
+    for(i = 0; i < PVR_OPB_COUNT; i++) {
+        if((pvr_state.lists_enabled & BIT(i))
+                && (!(pvr_state.lists_closed & BIT(i)))) {
+            pvr_list_begin(i);
+            pvr_blank_polyhdr(i);
+            pvr_list_finish();
+        }
+    }
+}
+
+/* Wait until the TA has processed every list of the given pass, i.e. until
+   each enabled list has raised its done interrupt pass + 1 times. */
+static int pvr_pass_wait(int pass) {
+    uint64_t start = timer_us_gettime64();
+    int i;
+
+    for(i = 0; i < PVR_OPB_COUNT; i++) {
+        if(!(pvr_state.lists_enabled & BIT(i)))
+            continue;
+
+        while(pvr_state.lists_done[i] < pass + 1) {
+            if(timer_us_gettime64() - start > PVR_PASS_TIMEOUT_US) {
+                dbglog(DBG_WARNING, "pvr: timed out waiting for pass %d "
+                       "of list %d\n", pass, i);
+                return -1;
+            }
+        }
+    }
+
+    return 0;
+}
+
+/* Hardware test hooks, see pvr_internal.h */
+volatile uint32_t pvr_mp_test_flags;
+
+/* Move the TA on to the next pass of a closed pass. */
+static void pvr_pass_continue(void) {
+    volatile pvr_ta_buffers_t *buf;
+    int pass = pvr_state.pass_cur + 1;
+
+    /* Let the TA finish the lists of the closed pass first. */
+    if(!(pvr_mp_test_flags & PVR_MP_TEST_NO_WAIT))
+        pvr_pass_wait(pvr_state.pass_cur);
+
+    /* The next pass's object lists start in that pass's first OPBs, which
+       its region array entries point to; then restart list input. Overflow
+       OPBs keep being allocated from where the earlier passes left off. */
+    buf = pvr_state.ta_buffers + pvr_state.ta_target;
+
+    if(!(pvr_mp_test_flags & PVR_MP_TEST_NO_OL_BASE))
+        PVR_SET(PVR_TA_OPB_START, buf->opb + buf->opb_size * pass);
+
+    PVR_SET(PVR_TA_LIST_CONT, BIT(31));
+    (void)PVR_GET(PVR_TA_LIST_CONT);
+
+    pvr_state.lists_closed = 0;
+    pvr_state.pass_cur = pass;
+}
+
+int pvr_scene_next_pass(void) {
+    if(pvr_state.dma_mode) {
+        dbglog(DBG_ERROR, "pvr_scene_next_pass: multipass rendering isn't "
+               "available with vertex DMA\n");
+        return -1;
+    }
+
+    if(pvr_state.pass_cur >= pvr_state.pass_count - 1)
+        return -1;
+
+    pvr_pass_close();
+    pvr_pass_continue();
+
+    return 0;
+}
+
+int pvr_scene_get_pass(void) {
+    return pvr_state.pass_cur;
+}
+
 /* Call this after you have finished submitting all data for a frame; once
    this has been called, you can not submit any more data until one of the
    pvr_scene_begin() functions is called again. An error (-1) is returned if
@@ -352,18 +451,14 @@ int pvr_scene_finish(void) {
         pvr_start_dma();
     }
     else {
-        /* If a list was open, close it */
-        if(pvr_state.list_reg_open != PVR_LIST_NONE)
-            pvr_list_finish();
+        /* Close the current pass. */
+        pvr_pass_close();
 
-        /* If any lists weren't submitted, then submit blank ones now */
-        for(i = 0; i < PVR_OPB_COUNT; i++) {
-            if((pvr_state.lists_enabled & BIT(i))
-                    && (!(pvr_state.lists_closed & BIT(i)))) {
-                pvr_list_begin(i);
-                pvr_blank_polyhdr(i);
-                pvr_list_finish();
-            }
+        /* The region array has entries for every pass: submit the passes
+           that weren't used, empty. */
+        while(pvr_state.pass_cur < pvr_state.pass_count - 1) {
+            pvr_pass_continue();
+            pvr_pass_close();
         }
     }
 
