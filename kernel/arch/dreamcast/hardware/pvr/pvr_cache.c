@@ -345,8 +345,11 @@ static int cache_walk(struct pvr_cache *c, int fix, uint32_t delta,
             a = first_block(c, 1, l, tn);
 
             for(steps = 0; ; steps++) {
-                if(steps > max_steps)
+                if(steps > max_steps) {
+                    dbglog(DBG_ERROR, "pvr_cache: list %d tile %d doesn't end\n",
+                           l, tn);
                     return -1;
+                }
 
                 w = VR(a);
 
@@ -360,8 +363,13 @@ static int cache_walk(struct pvr_cache *c, int fix, uint32_t delta,
                 if((w & OL_END) == OL_LINK) {
                     uint32_t next = w & OL_ADDR_MASK;
 
-                    if(next < lo || next >= hi)
+                    if(next < lo || next >= hi) {
+                        dbglog(DBG_ERROR, "pvr_cache: list %d tile %d: link "
+                               "%08lx at %06lx leaves %06lx-%06lx\n", l, tn,
+                               (unsigned long)w, (unsigned long)a,
+                               (unsigned long)lo, (unsigned long)hi);
                         return -1;
+                    }
 
                     if(fix)
                         VR(a - HALF) = OL_LINK | (next - HALF);
