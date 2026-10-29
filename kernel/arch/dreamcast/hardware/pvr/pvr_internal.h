@@ -17,6 +17,7 @@
    be added to dc/pvr.h. */
 
 #include <stdbool.h>
+#include <kos/regfield.h>
 #include <kos/sem.h>
 
 /**** State stuff ***************************************************/
@@ -113,6 +114,16 @@
 
 /* Total number of OPBs. Matches the count of pvr_list_t elements */
 #define PVR_OPB_COUNT   5
+
+/* Region array (tile matrix) entries: one control word and PVR_OPB_COUNT
+   list pointers. Control word bits, as far as they are known: */
+#define PVR_TILE_LAST           BIT(31) /* Last entry of the array */
+#define PVR_TILE_NO_ZCLEAR      BIT(30) /* Keep depth from the previous entry */
+#define PVR_TILE_PRESORT        BIT(29) /* Presort this entry's TR list */
+#define PVR_TILE_NO_WRITEOUT    BIT(28) /* Inferred: keep the tile on chip */
+
+/* List pointer value for "this list is empty in this tile" */
+#define PVR_TILE_LIST_EMPTY     0x80000000
 
 // TA buffers structure: we have two sets of these
 typedef struct {
