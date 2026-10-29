@@ -121,7 +121,7 @@ typedef struct {
     uint32_t  opb_addresses[PVR_OPB_COUNT];        /* Object pointer buffers (of each type) */
     uint32_t  tile_matrix, tile_matrix_size;  /* Tile matrix, size */
     uint32_t  opb_overflow_count;             /* Extra OPB space after opb_size for TA overflow */
-    uint32_t  tile_matrix_presort;            /* Pass presort mask the tile matrix was written with */
+    uint32_t  tile_matrix_key;                /* Settings (pass presort mask) the tile matrix was written with */
 } pvr_ta_buffers_t;
 
 // DMA buffers structure: we have two sets of these
@@ -270,9 +270,9 @@ void pvr_allocate_buffers(const pvr_init_params_t *params);
 /* Fill the tile matrices (after it's initialized) */
 void pvr_init_tile_matrices(void);
 
-/* Rewrite the presort bits of a TA buffer's tile matrix if they don't match
-   pvr_state.pass_presort. */
-void pvr_sync_tile_matrix_presort(int which);
+/* Rewrite a TA buffer's tile matrix if it doesn't match the current settings
+   (sort mode of each pass). */
+void pvr_sync_tile_matrix(int which);
 
 /* Region array (tile matrix) writer.
 

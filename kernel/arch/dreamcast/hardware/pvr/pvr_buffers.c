@@ -149,10 +149,11 @@ static uint32_t pvr_pass_flags(int p) {
     return flags;
 }
 
-/* What pvr_pass_flags() depends on, apart from the pass. */
+/* What a tile matrix's contents depend on, apart from the buffer layout. */
 static uint32_t pvr_tile_matrix_key(void) {
     return pvr_state.pass_presort
-           | ((pvr_mp_test_flags & PVR_MP_TEST_LAST_NO_WRITEOUT) ? BIT(31) : 0);
+           | ((pvr_mp_test_flags & PVR_MP_TEST_LAST_NO_WRITEOUT) ? BIT(31) : 0)
+           | ((pvr_mp_test_flags & PVR_MP_TEST_NO_OL_BASE) ? BIT(30) : 0);
 }
 
 /* Fill Tile Matrix buffers. This function takes a base address and sets up
@@ -177,12 +178,17 @@ static void pvr_init_tile_matrix(int which) {
         for(i = 0; i < PVR_OPB_COUNT; i++)
             passes[p].opb[i] = LIST_ENABLED(i) ?
                 buf->opb_addresses[i] + buf->opb_size * p : PVR_RA_LIST_EMPTY;
+
+        /* Hardware test hook: every pass uses pass 0's first OPBs. */
+        if(pvr_mp_test_flags & PVR_MP_TEST_NO_OL_BASE)
+            for(i = 0; i < PVR_OPB_COUNT; i++)
+                passes[p].opb[i] = passes[0].opb[i];
     }
 
     pvr_ra_write(buf->tile_matrix, pvr_state.tw, pvr_state.th, bin_size,
                  passes, pvr_state.pass_count);
 
-    buf->tile_matrix_presort = pvr_tile_matrix_key();
+    buf->tile_matrix_key = pvr_tile_matrix_key();
 }
 
 /* Fill all tile matrices */
@@ -198,16 +204,22 @@ static void pvr_write_tile_matrix_flags(int which) {
     volatile pvr_ta_buffers_t *buf = pvr_state.ta_buffers + which;
     int p;
 
+    /* The test hook that changes list pointers needs a full rewrite. */
+    if((buf->tile_matrix_key ^ pvr_tile_matrix_key()) & BIT(30)) {
+        pvr_init_tile_matrix(which);
+        return;
+    }
+
     for(p = 0; p < pvr_state.pass_count; p++)
         pvr_ra_set_flags(buf->tile_matrix, pvr_state.tw, pvr_state.th,
                          pvr_state.pass_count, p, pvr_pass_flags(p));
 
-    buf->tile_matrix_presort = pvr_tile_matrix_key();
+    buf->tile_matrix_key = pvr_tile_matrix_key();
 }
 
-void pvr_sync_tile_matrix_presort(int which) {
-    if(pvr_state.ta_buffers[which].tile_matrix_presort != pvr_tile_matrix_key())
-        pvr_write_tile_matrix_flags(which);
+void pvr_sync_tile_matrix(int which) {
+    if(pvr_state.ta_buffers[which].tile_matrix_key != pvr_tile_matrix_key())
+        pvr_init_tile_matrix(which);
 }
 
 void pvr_set_presort_mode(bool presort) {
