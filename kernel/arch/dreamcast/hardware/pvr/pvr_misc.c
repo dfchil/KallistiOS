@@ -176,6 +176,18 @@ void pvr_sync_reg_buffer(void) {
    opposite of ta_target) */
 void pvr_begin_queued_render(void) {
     volatile pvr_ta_buffers_t   *tbuf;
+
+    /* Get the appropriate buffer */
+    tbuf = pvr_state.ta_buffers + (pvr_state.ta_target ^ pvr_state.vbuf_doublebuf);
+
+    /* Throw the background data on the end of the TA's list */
+    pvr_begin_render(tbuf->tile_matrix, tbuf->vertex,
+                     PVR_GET(PVR_TA_VERTBUF_POS));
+}
+
+/* Begin a render from the given region array and parameter base, with the
+   background plane's parameters written at bg_addr */
+void pvr_begin_render(uint32_t tile_matrix, uint32_t param_base, uint32_t bg_addr) {
     volatile pvr_frame_buffers_t    *rbuf;
     pvr_bkg_poly_t  *bkg;
     uint32_t      vert_end;
@@ -186,8 +198,6 @@ void pvr_begin_queued_render(void) {
         uint32_t i;
     } zclip;
 
-    /* Get the appropriate buffer */
-    tbuf = pvr_state.ta_buffers + (pvr_state.ta_target ^ pvr_state.vbuf_doublebuf);
     rbuf = pvr_state.frame_buffers + (bufn ^ 1);
     target_w = pvr_state.curr_to_texture ? pvr_state.to_txr_w : (uint32_t)pvr_state.w;
     target_h = pvr_state.curr_to_texture ? pvr_state.to_txr_h : (uint32_t)pvr_state.h;
@@ -197,10 +207,9 @@ void pvr_begin_queued_render(void) {
        0x01203000... I'm thinking that the upper word signifies
        the length of the background plane list in dwords
        shifted up by 4. */
-    vert_end = 0x01000000 | ((PVR_GET(PVR_TA_VERTBUF_POS) - tbuf->vertex) << 1);
+    vert_end = 0x01000000 | ((bg_addr - param_base) << 1);
 
-    /* Throw the background data on the end of the TA's list */
-    bkg = (pvr_bkg_poly_t *)(PVR_RAM_BASE | PVR_GET(PVR_TA_VERTBUF_POS));
+    bkg = (pvr_bkg_poly_t *)(PVR_RAM_BASE | bg_addr);
 
     *bkg = (pvr_bkg_poly_t){
         .flags1 = 0x90800000,    /* These are from libdream.. ought to figure out */
@@ -225,8 +234,8 @@ void pvr_begin_queued_render(void) {
     //PVR_SET(PVR_RESET, PVR_RESET_NONE);
 
     /* Finish up rendering the current frame (into the other buffer) */
-    PVR_SET(PVR_ISP_TILEMAT_ADDR, tbuf->tile_matrix);
-    PVR_SET(PVR_ISP_VERTBUF_ADDR, tbuf->vertex);
+    PVR_SET(PVR_ISP_TILEMAT_ADDR, tile_matrix);
+    PVR_SET(PVR_ISP_VERTBUF_ADDR, param_base);
 
     if(!pvr_state.curr_to_texture)
         PVR_SET(PVR_RENDER_ADDR, rbuf->frame);
