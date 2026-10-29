@@ -135,8 +135,9 @@ typedef struct {
     uint32_t  opb_addresses[PVR_OPB_COUNT];        /* Object pointer buffers (of each type) */
     uint32_t  tile_matrix, tile_matrix_size;  /* Tile matrix, size */
     uint32_t  opb_overflow_count;             /* Extra OPB space after opb_size for TA overflow */
-    bool      tile_matrix_dirty;              /* Per-tile tables changed since the last build */
     bool      tile_matrix_skips;              /* Built with skipped tiles left out */
+    uint64_t  tile_matrix_presort[PVR_TILE_MAX];  /* tile_presort it was built from */
+    uint64_t  tile_matrix_skipped[PVR_TILE_MAX];  /* tile_skipped it was built from */
 } pvr_ta_buffers_t;
 
 // DMA buffers structure: we have two sets of these
@@ -284,8 +285,8 @@ void pvr_allocate_buffers(const pvr_init_params_t *params);
 /* Fill the tile matrices (after it's initialized) */
 void pvr_init_tile_matrices(bool presort);
 
-/* Rebuild the tile matrix of the TA buffer about to be filled, if the
-   per-tile state changed since it was last built */
+/* Rebuild the tile matrix of the TA buffer about to be filled, if it
+   doesn't match the per-tile state */
 void pvr_update_tile_matrix(void);
 
 

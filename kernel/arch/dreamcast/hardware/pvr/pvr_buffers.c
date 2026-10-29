@@ -126,8 +126,32 @@ static void pvr_build_tile_matrix(int which, bool skip) {
 
     last[0] |= PVR_TILE_LAST;
 
-    buf->tile_matrix_dirty = false;
+    /* Remember what this array was built from */
+    for(y = 0; y < pvr_state.th; y++) {
+        buf->tile_matrix_presort[y] = pvr_state.tile_presort[y];
+        buf->tile_matrix_skipped[y] = pvr_state.tile_skipped[y];
+    }
+
     buf->tile_matrix_skips = skip;
+}
+
+/* Does the region array of TA buffer which match the per-tile state? */
+static bool pvr_tile_matrix_current(int which, bool skip) {
+    volatile pvr_ta_buffers_t *buf = pvr_state.ta_buffers + which;
+    int y;
+
+    if(buf->tile_matrix_skips != skip)
+        return false;
+
+    for(y = 0; y < pvr_state.th; y++) {
+        if(buf->tile_matrix_presort[y] != pvr_state.tile_presort[y])
+            return false;
+
+        if(skip && buf->tile_matrix_skipped[y] != pvr_state.tile_skipped[y])
+            return false;
+    }
+
+    return true;
 }
 
 /* Fill Tile Matrix buffers. This function takes a base address and sets up
@@ -174,34 +198,23 @@ void pvr_init_tile_matrices(bool presort) {
    Called once per scene, when the TA buffer is known to be free (no render
    reads it), and after curr_to_texture is set for the scene. */
 void pvr_update_tile_matrix(void) {
-    volatile pvr_ta_buffers_t *buf = pvr_state.ta_buffers + pvr_state.ta_target;
     bool skip = !pvr_state.curr_to_texture && pvr_state.tiles_skipped;
 
-    if(buf->tile_matrix_dirty || buf->tile_matrix_skips != skip)
+    if(!pvr_tile_matrix_current(pvr_state.ta_target, skip))
         pvr_build_tile_matrix(pvr_state.ta_target, skip);
 }
 
 /* Set or clear a rectangle of tiles (inclusive tile coordinates, already
-   clipped to the screen) in one of the per-tile tables. Marks both region
-   arrays dirty if anything changed. */
+   clipped to the screen) in one of the per-tile tables. The region arrays
+   are compared against the tables when a scene starts, so setting a state
+   and setting it back before then costs nothing. */
 static void pvr_tile_table_set(volatile uint64_t *table, int tx0, int ty0,
                                int tx1, int ty1, bool set) {
-    uint64_t mask = pvr_tile_cols(tx0, tx1), row;
-    bool changed = false;
+    uint64_t mask = pvr_tile_cols(tx0, tx1);
     int y, n;
 
-    for(y = ty0; y <= ty1; y++) {
-        row = table[y];
-        row = set ? (row | mask) : (row & ~mask);
-
-        if(row != table[y]) {
-            table[y] = row;
-            changed = true;
-        }
-    }
-
-    if(!changed)
-        return;
+    for(y = ty0; y <= ty1; y++)
+        table[y] = set ? (table[y] | mask) : (table[y] & ~mask);
 
     if(table == pvr_state.tile_skipped) {
         for(y = 0, n = 0; y < pvr_state.th; y++)
@@ -209,9 +222,6 @@ static void pvr_tile_table_set(volatile uint64_t *table, int tx0, int ty0,
 
         pvr_state.tiles_skipped = n;
     }
-
-    pvr_state.ta_buffers[0].tile_matrix_dirty = true;
-    pvr_state.ta_buffers[1].tile_matrix_dirty = true;
 }
 
 /* Clip a rectangle in tiles to the screen. Returns false if nothing is
@@ -300,8 +310,10 @@ void pvr_get_tile_grid(int *tw, int *th) {
 }
 
 void pvr_set_presort_mode(bool presort) {
-    volatile pvr_ta_buffers_t *buf;
     bool skip;
+
+    if(!pvr_state.valid)
+        return;
 
     pvr_tile_table_set(pvr_state.tile_presort, 0, 0, pvr_state.tw - 1,
                        pvr_state.th - 1, presort);
@@ -309,16 +321,14 @@ void pvr_set_presort_mode(bool presort) {
     /* As before per-tile control existed, the change also applies to the
        scene being registered (if any), so rewrite the array of the TA buffer
        being filled right away. The other one follows at its next scene. */
-    buf = pvr_state.ta_buffers + pvr_state.ta_target;
+    skip = !(pvr_state.ta_checked_ready ? pvr_state.curr_to_texture :
+             pvr_state.next_to_texture) && pvr_state.tiles_skipped;
 
-    if(!buf->tile_matrix_dirty)
+    if(pvr_tile_matrix_current(pvr_state.ta_target, skip))
         return;
 
     if(__predict_false(!pvr_state.vbuf_doublebuf))
 	    pvr_wait_render_done();
-
-    skip = !(pvr_state.ta_checked_ready ? pvr_state.curr_to_texture :
-             pvr_state.next_to_texture) && pvr_state.tiles_skipped;
 
     pvr_build_tile_matrix(pvr_state.ta_target, skip);
 }
