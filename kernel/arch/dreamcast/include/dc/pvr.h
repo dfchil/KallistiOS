@@ -1118,6 +1118,11 @@ int pvr_scene_finish(void);
       pvr_set_pass_presort()). Sorting never crosses a pass boundary: all of
       a later pass's polygons, opaque ones included, are drawn after all of
       an earlier pass's polygons.
+    - A later pass's opaque polygons are shaded on their own pixels only:
+      the colour left by the earlier passes, translucent blending included,
+      stays everywhere else in the tile.
+    - Modifier volumes act within their pass: a volume shadows only the
+      polygons of its own pass, and doesn't affect later passes.
 
     This allows, for example, opaque geometry drawn after translucent geometry
     (keeping the opaque list's deferred shading), presorted and autosorted
@@ -1133,12 +1138,26 @@ int pvr_scene_finish(void);
     the same way.
 
     How it works: the region array (tile matrix) holds pass_count consecutive
-    entries per tile. Bit 30 of an entry's control word keeps the depth from
-    the previous entry, bit 29 presorts its translucent list, and bit 28 is
-    set on every entry of a tile but the last, so that the tile is written
-    out once. Between passes, KOS waits for the list-done interrupts of the
-    finished pass, points TA_OL_BASE at the next pass's object pointer bins
-    and writes TA_LIST_CONT.
+    entries per tile. Bit 30 of an entry's control word keeps the depth and
+    colour from the previous entry (no depth clear, no background plane),
+    bit 29 presorts its translucent list, and bit 28 keeps the tile on chip
+    after the entry. Between passes, KOS waits for the list-done interrupts
+    of the finished pass, points TA_OL_BASE at the next pass's object pointer
+    bins and writes TA_LIST_CONT; overflow bins are shared by all passes.
+
+    Measured on hardware, with and without FSAA:
+    - Bit 28 = 1 means "don't write the tile out". KOS sets it on every entry
+      of a tile but the last. Cleared on every entry, the picture is still
+      right, but a two-pass 640x480 frame took 11.8 ms instead of 3.7 ms
+      (23.5 ms instead of 7.0 ms with FSAA). Set on the last entry too,
+      nothing is written out and the render-done interrupt never comes.
+    - TA_OL_BASE must move: without it, the next pass's object lists
+      overwrite the earlier pass's first bins and its geometry is lost.
+    - Waiting for the list-done interrupts before TA_LIST_CONT was not
+      needed in the test (1500 frames of a heavy pass, TA_LIST_CONT written
+      while the TA was still binning, no difference). KOS waits anyway; the
+      wait took at most 56 us (120 us with FSAA) in that test, and next to
+      nothing with light passes.
 
     @{
 */
