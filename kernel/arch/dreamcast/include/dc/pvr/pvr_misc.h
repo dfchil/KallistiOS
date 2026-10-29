@@ -146,6 +146,26 @@ int pvr_set_vertical_scale(float factor);
 */
 void pvr_set_presort_mode(bool presort);
 
+/** \brief   Set the translucent polygon sort mode of one render pass.
+    \ingroup pvr_multipass
+
+    In a multipass scene (see pvr_init_params_t::pass_count), each pass sorts
+    its translucent list on its own: autosorted per pixel, or presorted
+    (drawn in submission order). This function sets the mode of one pass;
+    pvr_set_presort_mode() sets every pass. The initial mode of every pass
+    comes from pvr_init_params_t::autosort_disabled.
+
+    The setting is kept for later frames, until changed again. Called while a
+    scene is being submitted, it applies to that scene.
+
+    \param  pass            The pass, from 0 to pass_count - 1.
+    \param  presort         True for presort mode, false for autosort mode.
+
+    \retval 0               On success.
+    \retval -1              If pass is out of range.
+*/
+int pvr_set_pass_presort(int pass, bool presort);
+
 /** \brief   Retrieve the current VBlank count.
     \ingroup pvr_stats
 

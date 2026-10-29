@@ -712,7 +712,30 @@ typedef struct {
         but it allows using much smaller vertex buffers. */
     int     vbuf_doublebuf_disabled;
 
+    /** \brief  Number of render passes per frame.
+
+        Set to 0 or 1 for the usual single pass per frame. Set to 2 up to
+        \ref PVR_MAX_PASSES to render each frame in that many passes; a scene
+        moves to the next pass with pvr_scene_next_pass(). Each pass has its
+        own set of lists, every enabled list type can be opened again in each
+        pass, and a later pass draws over the colour and depth left by the
+        earlier ones. See \ref pvr_multipass for details.
+
+        Every extra pass costs one more set of object pointer bins (the
+        opb_sizes above times the tile count) per TA buffer, plus 24 bytes of
+        region array per tile.
+
+        Multipass rendering can't be combined with vertex DMA (dma_enabled):
+        pvr_init() fails if both are set.
+    */
+    int     pass_count;
+
 } pvr_init_params_t;
+
+/** \brief   Maximum value of pvr_init_params_t::pass_count.
+    \ingroup pvr_init
+*/
+#define PVR_MAX_PASSES  4
 
 /** \brief   PVR initialization structure defaults
     \ingroup pvr_init
@@ -1073,6 +1096,74 @@ int pvr_list_flush(pvr_list_t list);
     \retval -1              On error (no scene started).
 */
 int pvr_scene_finish(void);
+
+/** \defgroup pvr_multipass Multipass Rendering
+    \brief                  Rendering one frame in several passes
+    \ingroup                pvr_scene_mgmt
+
+    With pvr_init_params_t::pass_count set above 1, a scene is made of that
+    many passes. Each pass has its own opaque, opaque modifier, translucent,
+    translucent modifier and punch-through lists. Within a pass, the lists
+    work as in a single-pass scene. pvr_scene_next_pass() closes the current
+    pass and opens the next, after which every list type can be opened again.
+
+    The PVR renders each 32x32 tile once per pass, in pass order, before
+    moving on to the next tile:
+
+    - The first pass starts like a single-pass scene: depth cleared,
+      background plane drawn.
+    - Each later pass keeps the depth buffer and the colour left in the tile
+      by the earlier passes, and its polygons are depth-tested against them.
+    - Each pass sorts its own translucent list, autosorted or presorted (see
+      pvr_set_pass_presort()). Sorting never crosses a pass boundary: all of
+      a later pass's polygons, opaque ones included, are drawn after all of
+      an earlier pass's polygons.
+
+    This allows, for example, opaque geometry drawn after translucent geometry
+    (keeping the opaque list's deferred shading), presorted and autosorted
+    translucency in one frame, or a layer with its own depth range: a
+    full-screen polygon at the end of a pass, with depth compare "always",
+    depth write on and a far depth, resets the depth buffer and keeps the
+    colour.
+
+    The tile is written out to the frame buffer (or texture) only after its
+    last pass. If a scene calls pvr_scene_next_pass() fewer than
+    pass_count - 1 times, pvr_scene_finish() submits the remaining passes
+    empty. Render-to-texture scenes (pvr_scene_begin_rtt()) work with passes
+    the same way.
+
+    How it works: the region array (tile matrix) holds pass_count consecutive
+    entries per tile. Bit 30 of an entry's control word keeps the depth from
+    the previous entry, bit 29 presorts its translucent list, and bit 28 is
+    set on every entry of a tile but the last, so that the tile is written
+    out once. Between passes, KOS waits for the list-done interrupts of the
+    finished pass, points TA_OL_BASE at the next pass's object pointer bins
+    and writes TA_LIST_CONT.
+
+    @{
+*/
+
+/** \brief   Finish the current render pass and start the next one.
+
+    Closes the open list, submits blank lists for the enabled lists that
+    weren't submitted in this pass, and moves the TA on to the next pass.
+    After this call, every enabled list type can be opened again.
+
+    \retval 0               On success.
+    \retval -1              If the scene is already in its last pass, or if
+                            vertex DMA is enabled.
+
+    \sa pvr_init_params_t::pass_count
+*/
+int pvr_scene_next_pass(void);
+
+/** \brief   Retrieve the index of the pass being submitted.
+
+    \return                 The current pass, from 0 to pass_count - 1.
+*/
+int pvr_scene_get_pass(void);
+
+/** @} */
 
 /** \brief   Block the caller until the PVR system is ready for another frame to
              be submitted.

@@ -56,6 +56,19 @@ int pvr_init(const pvr_init_params_t *params) {
         return -1;
     }
 
+    /* Check the render pass count */
+    if(params->pass_count < 0 || params->pass_count > PVR_MAX_PASSES) {
+        dbglog(DBG_ERROR, "pvr: pass_count %d out of range (0 to %d)\n",
+               params->pass_count, PVR_MAX_PASSES);
+        return -1;
+    }
+
+    if(params->pass_count > 1 && params->dma_enabled) {
+        dbglog(DBG_ERROR, "pvr: multipass rendering (pass_count %d) can't be "
+               "used with vertex DMA (dma_enabled)\n", params->pass_count);
+        return -1;
+    }
+
     /* Clear out video memory */
     vid_empty();
 
@@ -74,11 +87,16 @@ int pvr_init(const pvr_init_params_t *params) {
 
     pvr_state.vbuf_doublebuf = !params->vbuf_doublebuf_disabled;
 
+    /* Render passes, and the translucent sort mode of each */
+    pvr_state.pass_count = params->pass_count > 1 ? params->pass_count : 1;
+    pvr_state.pass_presort = params->autosort_disabled ?
+                             (uint32_t)(BIT(pvr_state.pass_count) - 1) : 0;
+
     /* Everything's clear, do the initial buffer pointer setup */
     pvr_allocate_buffers(params);
 
     /* Initialize tile matrices */
-    pvr_init_tile_matrices(!!params->autosort_disabled);
+    pvr_init_tile_matrices();
 
     pvr_state.list_reg_open = PVR_LIST_NONE;
 
