@@ -90,9 +90,22 @@ static void pvr_render_lists(void) {
         // Begin rendering from the dirty TA buffer into the clean
         // frame buffer.
         pvr_state.ta_target ^= pvr_state.vbuf_doublebuf;
-        pvr_begin_queued_render();
-        pvr_state.render_busy = 1;
-        pvr_sync_stats(PVR_SYNC_RNDSTART);
+
+        if(__predict_false(pvr_state.ta_buffers[pvr_state.ta_target ^
+                           pvr_state.vbuf_doublebuf].tile_matrix_empty)) {
+            /* Every tile is skipped. The hardware hangs on a region array
+               holding only the dummy entry, so don't render: the frame is
+               done at once, and the view flips to the other frame buffer
+               as after any render. */
+            pvr_sync_stats(PVR_SYNC_RNDSTART);
+            pvr_sync_stats(PVR_SYNC_RNDDONE);
+            pvr_state.render_completed = 1;
+        }
+        else {
+            pvr_begin_queued_render();
+            pvr_state.render_busy = 1;
+            pvr_sync_stats(PVR_SYNC_RNDSTART);
+        }
 
         // Switch to the clean TA buffer.
         pvr_state.lists_transferred = 0;
