@@ -133,16 +133,19 @@ int pvr_set_vertical_scale(float factor);
     \ingroup pvr_scene_mgmt
 
     This function sets the translucent polygon sort mode for the next frame of
-    output, potentially switching between autosort and presort mode.
+    output, potentially switching between autosort and presort mode. It sets
+    every tile of the screen; see \ref pvr_region to set the mode per tile.
 
     For most programs, you'll probably want to set this at initialization time
     (with the autosort_disabled field in the pvr_init_params_t structure) and
-    not mess with it per-frame. It is recommended that if you do use this
-    function to change the mode that you should set it each frame to ensure that
-    the mode is set properly.
+    not mess with it per-frame. The mode stays set until it is changed again.
+    If a scene is being registered, the new mode applies to it too. Calling
+    this with the mode already set costs nothing.
 
     \param  presort         Set to true to set the presort mode for translucent
                             polygons, set to false to use autosort mode.
+
+    \sa pvr_set_rect_presort(), pvr_set_tile_presort()
 */
 void pvr_set_presort_mode(bool presort);
 
