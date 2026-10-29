@@ -403,10 +403,50 @@ static int cache_walk(struct pvr_cache *c, int fix, uint32_t delta,
     return (int)n;
 }
 
+/* After a build into copy 1, with the TA's parameters at ib up to pos: find
+   the base the TA wrote its offsets against, rebase them to copy 1's
+   parameter base and mirror the lists to copy 0. */
+static int cache_rebase(struct pvr_cache *c, uint32_t ib, uint32_t pos) {
+    uint32_t min_off = OL_OFFSET_MASK, max_off = 0, tb;
+    int n;
+
+    n = cache_walk(c, 0, 0, &min_off, &max_off);
+
+    if(n < 0) {
+        dbglog(DBG_ERROR, "pvr_cache_build: malformed object list\n");
+        return -1;
+    }
+
+    /* lxdream: the TA's write start rounded down to 1 MB. Otherwise the
+       write start itself. Every entry must point into what the TA wrote. */
+    tb = ib & 0xf00000;
+
+    if(n > 0 && (tb + min_off * 4 < ib || tb + max_off * 4 >= pos)) {
+        tb = ib;
+
+        if(tb + max_off * 4 >= pos) {
+            dbglog(DBG_ERROR, "pvr_cache_build: offsets %05lx-%05lx don't fit "
+                   "parameters %06lx-%06lx\n", (unsigned long)min_off,
+                   (unsigned long)max_off, (unsigned long)ib, (unsigned long)pos);
+            return -1;
+        }
+    }
+
+    c->ta_param_base = tb;
+
+    n = cache_walk(c, 1, (tb - HALF) >> 2, NULL, NULL);
+
+    if(n < 0)
+        return -1;
+
+    c->entries = n;
+
+    return 0;
+}
+
 int pvr_cache_build(pvr_cache_t *c, void (*send)(void *data), void *data) {
-    uint32_t ib, ie, ob, pos, closed, done, errors, tb, a;
-    uint32_t min_off = OL_OFFSET_MASK, max_off = 0;
-    int saved_checked, o, l, n, timeouts;
+    uint32_t ib, ie, ob, pos, closed, done, errors, a;
+    int saved_checked, o, l, timeouts;
     size_t i;
     uint64_t t0;
 
@@ -527,38 +567,8 @@ int pvr_cache_build(pvr_cache_t *c, void (*send)(void *data), void *data) {
 
     c->params_used = pos - ib;
 
-    /* Which base did the TA write its offsets against? Every entry must
-       point into the parameters it wrote. */
-    n = cache_walk(c, 0, 0, &min_off, &max_off);
-
-    if(n < 0) {
-        dbglog(DBG_ERROR, "pvr_cache_build: malformed object list\n");
+    if(cache_rebase(c, ib, pos) < 0)
         goto fail;
-    }
-
-    tb = ib & 0xf00000;
-
-    if(n > 0 && (tb + min_off * 4 < ib || tb + max_off * 4 >= pos)) {
-        tb = ib;
-
-        if(tb + max_off * 4 >= pos) {
-            dbglog(DBG_ERROR, "pvr_cache_build: offsets %05lx-%05lx don't fit "
-                   "parameters %06lx-%06lx\n", (unsigned long)min_off,
-                   (unsigned long)max_off, (unsigned long)ib, (unsigned long)pos);
-            goto fail;
-        }
-    }
-
-    c->ta_param_base = tb;
-
-    /* Rebase the offsets to copy 1's parameter base and mirror the lists
-       to copy 0 */
-    n = cache_walk(c, 1, (tb - HALF) >> 2, NULL, NULL);
-
-    if(n < 0)
-        goto fail;
-
-    c->entries = n;
 
     /* Mirror the parameters to copy 0 */
     for(a = ib; a < pos; a += 4)

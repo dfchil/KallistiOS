@@ -83,13 +83,15 @@ static uint32_t fbits(float f) {
 
 /* PVR setup ***********************************************************/
 
-static void init_pvr(int use_fsaa, int no_doublebuf, int reserve) {
+/* The TA gets opaque and translucent lists, and punch-through only when
+   with_pt is set (otherwise the PT slot is free for caches) */
+static void init_pvr_pt(int use_fsaa, int no_doublebuf, int reserve, int with_pt) {
     pvr_init_params_t params = {
         .opb_sizes = { PVR_BINSIZE_16, PVR_BINSIZE_0, PVR_BINSIZE_16,
-                       PVR_BINSIZE_0, PVR_BINSIZE_0 },
+                       PVR_BINSIZE_0, with_pt ? PVR_BINSIZE_16 : PVR_BINSIZE_0 },
         .vertex_buf_size = 512 * 1024,
         .fsaa_enabled = use_fsaa,
-        .opb_overflow_count = 3,
+        .opb_overflow_count = 6,
         .vbuf_doublebuf_disabled = no_doublebuf,
         .cached_list_size = reserve
     };
@@ -103,6 +105,10 @@ static void init_pvr(int use_fsaa, int no_doublebuf, int reserve) {
 
     txr_avail = pvr_mem_available();
     rtt_tex = pvr_mem_malloc(RTT_STRIDE * 512 * 2);
+}
+
+static void init_pvr(int use_fsaa, int no_doublebuf, int reserve) {
+    init_pvr_pt(use_fsaa, no_doublebuf, reserve, 0);
 }
 
 static void shutdown_pvr(void) {
@@ -144,12 +150,12 @@ static const char *cname(uint16_t c) {
 
 typedef void (*draw_fn)(void *data);
 
-/* A TA frame rendered to the texture, with an opaque list from op() */
-static void rtt_frame(draw_fn op, void *data) {
+/* A TA frame rendered to the texture, with one list from op() */
+static void rtt_frame_list(pvr_list_t list, draw_fn op, void *data) {
     rtt_fill();
     pvr_wait_ready();
     pvr_scene_begin_rtt(rtt_tex, RTT_W, RTT_H, RTT_STRIDE);
-    pvr_list_begin(PVR_LIST_OP_POLY);
+    pvr_list_begin(list);
 
     if(op)
         op(data);
@@ -158,6 +164,10 @@ static void rtt_frame(draw_fn op, void *data) {
     pvr_scene_finish();
     pvr_wait_ready();
     pvr_wait_render_done();
+}
+
+static void rtt_frame(draw_fn op, void *data) {
+    rtt_frame_list(PVR_LIST_OP_POLY, op, data);
 }
 
 /* A whole frame from a cache, rendered to the texture */
@@ -620,7 +630,7 @@ static void build_pattern(void *data) {
     pvr_list_finish();
 }
 
-static uint16_t *reference;
+static uint16_t *reference, *refs[2];
 
 static void save_reference(void) {
     int x, y;
@@ -717,14 +727,35 @@ static void q3_config(int use_fsaa, int no_doublebuf) {
         .vertex_buf_size = 256 * 1024,
         .opb_overflow_count = 6
     };
-    pattern_t ref = { PVR_LIST_OP_POLY, 1 }, cached = { PVR_LIST_PT_POLY, 1 };
+    pattern_t ref = { PVR_LIST_PT_POLY, 1 }, cached = { PVR_LIST_PT_POLY, 1 };
     pvr_cache_info_t info;
     pvr_cache_t *c;
-    int i, ok = 1, entries, links, mismatch, r;
+    int i, ok = 1, entries, links, mismatch, r, fx, fy;
     char what[64];
 
     printf("\nQ3 config: FSAA %s, vertex double-buffering %s\n",
            use_fsaa ? "on" : "off", no_doublebuf ? "off" : "on");
+
+    /* References: the same polygons sent through the TA as punch-through,
+       with the TA's PT list enabled. For information, also compare with
+       the opaque list. */
+    init_pvr_pt(use_fsaa, no_doublebuf, 0, 1);
+
+    for(r = 0; r < 2; r++) {
+        ref.seed = 1 + r;
+        ref.list = PVR_LIST_PT_POLY;
+        rtt_frame_list(PVR_LIST_PT_POLY, send_pattern, &ref);
+        reference = refs[r];
+        save_reference();
+        ref.list = PVR_LIST_OP_POLY;
+        rtt_frame(send_pattern, &ref);
+        printf("Q3   pattern %d: %d pixels differ between the TA's PT and OP lists "
+               "(information)\n", r, compare_reference(&fx, &fy));
+    }
+
+    shutdown_pvr();
+
+    /* Now with the PT slot free for the cache */
     init_pvr(use_fsaa, no_doublebuf, RESERVE);
 
     c = pvr_cache_create(&cp);
@@ -738,10 +769,8 @@ static void q3_config(int use_fsaa, int no_doublebuf) {
 
     for(r = 0; r < 2; r++) {
         /* The second round rebuilds the cache with another pattern */
-        ref.seed = cached.seed = 1 + r;
-
-        rtt_frame(send_pattern, &ref);
-        save_reference();
+        cached.seed = 1 + r;
+        reference = refs[r];
 
         if(pvr_cache_build(c, build_pattern, &cached) < 0) {
             printf("Q3   pvr_cache_build failed\n");
@@ -788,7 +817,7 @@ static void q3_config(int use_fsaa, int no_doublebuf) {
             ok &= q3_check(what);
         }
 
-        /* Later frames: a minute of heavy TA frames on screen, then again */
+        /* Later frames: a second of heavy TA frames on screen, then again */
         for(i = 0; i < 60; i++)
             q3_screen_frame(i);
 
@@ -813,7 +842,8 @@ static void q3_config(int use_fsaa, int no_doublebuf) {
 }
 
 static void q3(void) {
-    reference = malloc(RTT_W * RTT_H * 2);
+    refs[0] = malloc(RTT_W * RTT_H * 2);
+    refs[1] = malloc(RTT_W * RTT_H * 2);
 
     printf("\nQ3: TA-built cache in later frames, from both TA buffers\n");
     q3_config(0, 0);
@@ -821,7 +851,9 @@ static void q3(void) {
     q3_config(1, 0);
     q3_config(1, 1);
 
-    free(reference);
+    free(refs[0]);
+    free(refs[1]);
+    reference = NULL;
 }
 
 /* Q4 ******************************************************************/
