@@ -70,12 +70,18 @@ static void compile_headers(void) {
     pvr_poly_cxt_txr(&cxt, PVR_LIST_TR_POLY,
                      PVR_TXRFMT_ARGB4444 | PVR_TXRFMT_NONTWIDDLED,
                      TXT_W, TXT_H, txt_tex, PVR_FILTER_NONE);
+    cxt.gen.culling = PVR_CULLING_NONE;
     pvr_poly_compile(&hdr_txt, &cxt);
 
+    /* No culling: the depth buffer sorts the cube's faces out */
     pvr_poly_cxt_col(&cxt, PVR_LIST_OP_POLY);
+    cxt.gen.culling = PVR_CULLING_NONE;
     pvr_poly_compile(&hdr_op, &cxt);
 
+    /* The wall doesn't write depth */
     pvr_poly_cxt_col(&cxt, PVR_LIST_TR_POLY);
+    cxt.gen.culling = PVR_CULLING_NONE;
+    cxt.depth.write = PVR_DEPTHWRITE_DISABLE;
     pvr_poly_compile(&hdr_tr, &cxt);
 }
 
@@ -272,7 +278,7 @@ int main(int argc, char *argv[]) {
 
         if(autocycle && timer_ms_gettime64() >= next_switch) {
             two_pass = !two_pass;
-            next_switch += 5000;
+            next_switch = timer_ms_gettime64() + 5000;
         }
 
         setup(two_pass ? 2 : 1);
