@@ -127,11 +127,11 @@ typedef struct pvr_bg_vertex {
     float    y;     /**< \brief Y position, in render target pixels */
     float    z;     /**< \brief 1/w, must be greater than zero.
 
-                         Used only to interpolate color and texture
-                         coordinates. Give all three vertices the same value
-                         (e.g. 1.0f) for interpolation that is linear across
-                         the screen. The depth of the plane is the
-                         pvr_set_zclip() value, not this one. */
+                         Used to interpolate color and texture coordinates.
+                         Give all three vertices the same value for
+                         interpolation that is linear across the screen; the
+                         default vertices use FLT_EPSILON. The depth the plane
+                         is drawn at is the pvr_set_zclip() value. */
     float    u;     /**< \brief Texture U coordinate (textured plane only) */
     float    v;     /**< \brief Texture V coordinate (textured plane only) */
     uint32_t argb;  /**< \brief Color, packed ARGB (alpha is ignored) */

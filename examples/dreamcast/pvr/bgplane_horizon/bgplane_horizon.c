@@ -26,6 +26,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <float.h>
 
 #include <kos.h>
 #include <dc/pvr.h>
@@ -203,7 +204,7 @@ static void set_sky(float xs) {
 
     for(i = 0; i < 3; i++) {
         v[i].x *= xs;
-        v[i].z = 1.0f;
+        v[i].z = FLT_EPSILON;  /* as the default vertices */
         v[i].u = v[i].v = 0.0f;
     }
 

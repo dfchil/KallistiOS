@@ -20,6 +20,8 @@
      Q4  textured plane: texture coordinates over the whole screen, repeat,
          and render time against a flat plane for several texture sizes
      Q6  (extra) vertices with different z: perspective-correct or affine?
+     Q7  (extra) does the vertices' z change the plane's depth, or is it
+         always the pvr_set_zclip() value?
 
    Dithering is switched off while reading back, so the values are exact.
    A render-to-texture target is filled with magenta (255 0 255) first, so
@@ -830,6 +832,54 @@ static void test_q6(void) {
     add_summary("Q6 z color %s, tex %s", col, tex);
 }
 
+/* Q7 (extra): the plane's vertices at z (1/w) = 1.0, an opaque quad over
+   the whole screen at 0.5. If the plane's depth is the pvr_set_zclip() value
+   (0.0001), the quad is in front of it and covers the screen; if the vertex
+   z were the plane's depth, the plane would hide the quad. */
+static void test_q7(void) {
+    static const float zs[2] = { 1.0f, FLT_EPSILON };
+    const float x[4] = { 0.0f, render_w(TGT_SCREEN), 0.0f,
+                         render_w(TGT_SCREEN) };
+    const float y[4] = { 0.0f, 0.0f, SCREEN_H, SCREEN_H };
+    pvr_bg_vertex_t v[3];
+    const char *what[2];
+    int i, k, o[3];
+
+    for(k = 0; k < 2; k++) {
+        default_verts(v, render_w(TGT_SCREEN), SCREEN_H, 0xffff0000,
+                      0xffff0000, 0xffff0000);
+
+        for(i = 0; i < 3; i++)
+            v[i].z = zs[k];
+
+        pvr_set_bg_poly(v);
+
+        for(i = 0; i < 3; i++) {
+            pvr_wait_ready();
+            pvr_scene_begin();
+            pvr_list_begin(PVR_LIST_OP_POLY);
+            pvr_prim(&flat_hdr, sizeof(flat_hdr));
+            quad(x, y, 0.5f, NULL, NULL, 0xff00ff00);
+            pvr_list_finish();
+            pvr_scene_finish();
+        }
+
+        pvr_wait_ready();
+        pvr_wait_render_done();
+        vid_waitvbl();
+        vid_waitvbl();
+        expand565(read_px(TGT_SCREEN, 320, 240), o);
+
+        what[k] = o[1] > 200 && o[0] < 50 ? "quad in front" :
+                  o[0] > 200 && o[1] < 50 ? "PLANE IN FRONT" : "OTHER";
+        report("Q7 plane z %g, quad z 0.5: got %d %d %d -> %s\n",
+               (double)zs[k], o[0], o[1], o[2], what[k]);
+    }
+
+    add_summary("Q7 z=1 %s, eps %s", what[0], what[1]);
+    pvr_set_bg_color(0.0f, 0.0f, 0.0f);
+}
+
 /* ---- Render time ------------------------------------------------------- */
 
 enum { FG_NONE, FG_FLAT, FG_TEX };
@@ -1120,6 +1170,7 @@ int main(int argc, char *argv[]) {
     run_all(TGT_SCREEN);
     run_all(TGT_RTT);
     test_q6();
+    test_q7();
     test_q4_time();
     pvr_set_bg_color(0.0f, 0.0f, 0.0f);
 

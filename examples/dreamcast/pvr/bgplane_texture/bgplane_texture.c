@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
+#include <float.h>
 
 #include <kos.h>
 #include <dc/pvr.h>
@@ -139,7 +140,7 @@ static void set_background(void) {
     for(i = 0; i < 3; i++) {
         v[i].x = px[i] * xs;
         v[i].y = py[i];
-        v[i].z = 1.0f;
+        v[i].z = FLT_EPSILON;  /* as the default vertices */
         screen_to_uv(px[i], py[i], &v[i].u, &v[i].v);
         v[i].argb = 0xffffffff;
     }
