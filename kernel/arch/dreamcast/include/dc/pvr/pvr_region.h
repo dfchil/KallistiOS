@@ -77,7 +77,8 @@ __BEGIN_DECLS
     \par Render to texture
     Scenes begun with pvr_scene_begin_txr() or pvr_scene_begin_rtt() use the
     per-tile sort mode but ignore skipped tiles: every tile is rendered, so
-    the texture is always complete.
+    the texture is always complete. While tiles are skipped, switching
+    between texture and screen scenes rewrites the array each time.
 
     \par Hardware notes
     The region array keeps KOS's tile order (column by column, top to
