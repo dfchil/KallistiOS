@@ -288,6 +288,10 @@ void pvr_sync_reg_buffer(void);
 /* Begin a render operation that has been queued completely */
 void pvr_begin_queued_render(void);
 
+/* Begin a render from the given region array and parameter base, with the
+   background plane parameters written at bg_addr (32-bit VRAM offsets) */
+void pvr_begin_render(uint32_t tile_matrix, uint32_t param_base, uint32_t bg_addr);
+
 /* Generate synthetic polygon headers for the given list type (to submit
    blank lists that the user forgot) */
 void pvr_blank_polyhdr(int type);
