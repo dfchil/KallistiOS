@@ -104,6 +104,10 @@ This page serves as an index for all KallistiOS examples.
   - general
 - pvr
   - bumpmap
+  - cache_bench
+  - cache_hwtest
+  - cache_overlay
+  - cache_static_screen
   - cheap_shadow
   - fb_tex
   - modifier_volume
