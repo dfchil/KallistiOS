@@ -113,6 +113,7 @@ This page serves as an index for all KallistiOS examples.
   - multipass_decal
   - multipass_mirror
   - multipass_sortmix
+  - multipass_trdepth
   - multipass_viewmodel
   - palette
   - plasma
