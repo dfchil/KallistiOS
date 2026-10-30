@@ -153,9 +153,10 @@ void pvr_sync_reg_buffer(void) {
     //PVR_SET(PVR_RESET, PVR_RESET_NONE);
 
     /* Set buffer pointers */
+    /* The first OPBs of each render pass, then the overflow OPBs */
     PVR_SET(PVR_TA_OPB_START,       buf->opb);
-    PVR_SET(PVR_TA_OPB_INIT,        buf->opb + buf->opb_size);
-    PVR_SET(PVR_TA_OPB_END,         buf->opb + buf->opb_size * (1 + buf->opb_overflow_count));
+    PVR_SET(PVR_TA_OPB_INIT,        buf->opb + buf->opb_size * pvr_state.pass_count);
+    PVR_SET(PVR_TA_OPB_END,         buf->opb + buf->opb_size * (pvr_state.pass_count + buf->opb_overflow_count));
     PVR_SET(PVR_TA_VERTBUF_START,   buf->vertex);
     PVR_SET(PVR_TA_VERTBUF_END,     buf->vertex + buf->vertex_size);
 
