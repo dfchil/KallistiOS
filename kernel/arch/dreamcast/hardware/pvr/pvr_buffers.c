@@ -204,7 +204,7 @@ void pvr_sync_tile_matrix(int which) {
 
 void pvr_set_presort_mode(bool presort) {
     if(__predict_false(!pvr_state.vbuf_doublebuf))
-	    pvr_wait_render_done();
+            pvr_wait_render_done();
 
     pvr_state.pass_presort = presort ? (uint32_t)(BIT(pvr_state.pass_count) - 1) : 0;
     pvr_write_tile_matrix_flags(pvr_state.ta_target);
@@ -215,7 +215,7 @@ int pvr_set_pass_presort(int pass, bool presort) {
         return -1;
 
     if(__predict_false(!pvr_state.vbuf_doublebuf))
-	    pvr_wait_render_done();
+            pvr_wait_render_done();
 
     if(presort)
         pvr_state.pass_presort |= BIT(pass);

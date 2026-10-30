@@ -123,7 +123,7 @@ int main(void) {
         fb = (volatile uint16_t *)(PVR_RAM_BASE + addr);
 
         printf("HWTEST pass 0 %s, TR depth write %s: under-TR quad %06lx "
-               "(blue=not occluded, c64142=occluded), behind-floor %06lx, "
+               "(0000f8=not occluded, c04040=occluded), behind-floor %06lx, "
                "outside %06lx, tint %06lx\n",
                (mode & 1) ? "presort " : "autosort", tr_write ? "on " : "off",
                rgb565_to_888(fb[250 * 640 + 250]),
