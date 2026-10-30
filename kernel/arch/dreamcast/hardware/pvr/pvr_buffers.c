@@ -334,7 +334,7 @@ void pvr_set_presort_mode(bool presort) {
         return;
 
     if(__predict_false(!pvr_state.vbuf_doublebuf))
-	    pvr_wait_render_done();
+            pvr_wait_render_done();
 
     pvr_build_tile_matrix(pvr_state.ta_target, skip);
 }
