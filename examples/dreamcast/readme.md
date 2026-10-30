@@ -111,6 +111,7 @@ This page serves as an index for all KallistiOS examples.
   - modifier_volume_zclip
   - multipass_basic
   - multipass_decal
+  - multipass_hwtest
   - multipass_mirror
   - multipass_sortmix
   - multipass_trdepth
