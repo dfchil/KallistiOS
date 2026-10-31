@@ -122,6 +122,7 @@ This page serves as an index for all KallistiOS examples.
   - pvrmark_strips
   - pvrmark_strips_direct
   - region_hwtest
+  - region_multipass
   - region_sortsplit
   - region_static_frame
   - region_tiles
