@@ -144,6 +144,30 @@ typedef struct {
     uint32_t  frame, frame_size;      // Output frame buffer, size
 } pvr_frame_buffers_t;
 
+/* A cache of object lists (pvr_cache.c). Two copies, one per VRAM half,
+   at base[0] and base[1] = base[0] + 0x400000. All offsets below are
+   relative to the start of a copy. Each copy's object list entries are
+   relative to the parameter base of its half (0 or 0x400000). */
+struct pvr_cache {
+    struct pvr_cache *next;             /* Next cache, by address */
+    uint32_t  base[2];                  /* Start of each copy (32-bit VRAM offset) */
+    uint32_t  size;                     /* Size of each copy */
+    uint32_t  region;                   /* Region array (after its header) */
+    uint32_t  bg;                       /* Background plane parameters */
+    uint32_t  params, params_size;      /* TA parameter area */
+    uint32_t  params_used;              /* Bytes the TA wrote in the last build */
+    uint32_t  opb, opb_size;            /* First blocks of all lists, total size */
+    uint32_t  opb_addresses[PVR_OPB_COUNT]; /* First blocks of each list */
+    uint32_t  opb_block[PVR_OPB_COUNT];     /* Bytes per tile in each list */
+    uint32_t  opb_overflow_count;       /* Overflow sets after the first blocks */
+    uint32_t  lists;                    /* (1 << list) for each list in the cache */
+    uint32_t  list_reg_mask;            /* PVR_OPB_CFG value for builds */
+    bool      presort;                  /* Presort TR in whole-frame renders */
+    uint32_t  entries;                  /* Entries written by the last build */
+    uint32_t  ta_param_base;            /* Offset base the TA used in the last build */
+    uint32_t  build_ns;                 /* Duration of the last build */
+};
+
 /* PVR status structure; not only will this hold status information,
    but it will also server as the wait object for the frame-complete
    genwaits. */
@@ -263,6 +287,19 @@ typedef struct {
 
     // Output address for to-texture mode for the next frame
     uint32_t  next_to_txr_addr;
+
+    // Cached object lists (pvr_cache.c). The reserved area is at
+    // cache_area in the lower half and cache_area + 0x400000 in the upper
+    // half, cache_area_size bytes each; 0 if nothing was reserved.
+    uint32_t  cache_area;
+    uint32_t  cache_area_size;
+    struct pvr_cache *caches;                   // All caches, by address
+    struct pvr_cache *slot_cache[PVR_OPB_COUNT];// Cache attached to each list slot
+    struct pvr_cache *frame_cache;              // Cache to render as the next frame
+    int       cache_half;                       // Copy used by the last cached frame
+    int       cache_building;                   // TA is filling a cache
+    uint32_t  cache_lists_done;                 // List-done events while building
+    uint32_t  cache_errors;                     // TA error events while building
 } pvr_state_t;
 
 /* There will be exactly one of these in KOS (in pvr_globals.c) */
@@ -281,8 +318,8 @@ extern volatile pvr_state_t pvr_state;
 
 /**** pvr_buffers.c ***************************************************/
 
-/* Initialize buffers for TA/ISP/TSP usage */
-void pvr_allocate_buffers(const pvr_init_params_t *params);
+/* Initialize buffers for TA/ISP/TSP usage; -1 if they don't fit */
+int pvr_allocate_buffers(const pvr_init_params_t *params);
 
 /* Fill the tile matrices (after it's initialized) */
 void pvr_init_tile_matrices(bool presort);
@@ -360,6 +397,9 @@ uint32_t pvr_ra_pass_flags(int p, int pass_count, bool presort);
    doesn't match the per-tile state */
 void pvr_update_tile_matrix(void);
 
+/* Rebuild both tile matrices, for a change the per-tile state doesn't show */
+void pvr_rebuild_tile_matrices(void);
+
 
 /**** pvr_misc.c ******************************************************/
 
@@ -385,6 +425,10 @@ void pvr_sync_reg_buffer(void);
 /* Begin a render operation that has been queued completely */
 void pvr_begin_queued_render(void);
 
+/* Begin a render from the given region array and parameter base, with the
+   background plane parameters written at bg_addr (32-bit VRAM offsets) */
+void pvr_begin_render(uint32_t tile_matrix, uint32_t param_base, uint32_t bg_addr);
+
 /* Generate synthetic polygon headers for the given list type (to submit
    blank lists that the user forgot) */
 void pvr_blank_polyhdr(int type);
@@ -400,5 +444,18 @@ void pvr_int_handler(uint32_t code, void *data);
 void pvr_vblank_handler(uint32_t code, void *data);
 
 void pvr_start_dma(void);
+
+/* Start a queued whole-frame cache render if the PVR is ready for it.
+   Call with interrupts disabled; true if started. */
+bool pvr_start_cached_frame(void);
+
+
+/**** pvr_cache.c *****************************************************/
+
+/* Begin a whole-frame render from a cache */
+void pvr_begin_cached_render(struct pvr_cache *cache);
+
+/* Free all caches (at shutdown) */
+void pvr_cache_shutdown(void);
 
 #endif

@@ -11,6 +11,7 @@
 #include <dc/pvr.h>
 #include <dc/video.h>
 #include <kos/regfield.h>
+#include <kos/dbglog.h>
 
 #include "pvr_internal.h"
 
@@ -140,6 +141,7 @@ static inline uint64_t pvr_tile_cols(int x0, int x1) {
    so the PVR neither renders them nor writes them to the frame buffer. */
 static void pvr_build_tile_matrix(int which, bool skip) {
     volatile pvr_ta_buffers_t *buf;
+    struct pvr_cache *c;
     pvr_ra_pass_t passes[PVR_MAX_PASSES];
     int bin_size[PVR_OPB_COUNT];
     size_t size;
@@ -159,6 +161,17 @@ static void pvr_build_tile_matrix(int which, bool skip) {
         for(i = 0; i < PVR_OPB_COUNT; i++)
             passes[p].opb[i] = LIST_ENABLED(i) ?
                 buf->opb_addresses[i] + buf->opb_size * p : PVR_RA_LIST_EMPTY;
+    }
+
+    /* A cache attached to a list slot supplies that list in the first pass,
+       from the copy that belongs to this TA buffer. */
+    for(i = 0; i < PVR_OPB_COUNT; i++) {
+        c = pvr_state.slot_cache[i];
+
+        if(c) {
+            passes[0].opb[i] = c->base[which] + c->opb_addresses[i];
+            bin_size[i] = c->opb_block[i];
+        }
     }
 
     size = pvr_ra_write(buf->tile_matrix, pvr_state.tw, pvr_state.th, bin_size,
@@ -214,6 +227,15 @@ void pvr_init_tile_matrices(bool presort) {
 
     for(i = 0; i < 2; i++)
         pvr_build_tile_matrix(i, false);
+}
+
+/* Rebuild both region arrays, for a change the per-tile tables don't show
+   (a cache attached to a list slot). No render may be reading them. */
+void pvr_rebuild_tile_matrices(void) {
+    int i;
+
+    for(i = 0; i < 2; i++)
+        pvr_build_tile_matrix(i, pvr_state.ta_buffers[i].tile_matrix_skips);
 }
 
 /* Bring the region array of the TA buffer about to be filled up to date.
@@ -386,12 +408,18 @@ rather than a copy of the flat 32-bit VRAM. So in order to maximize the
 available texture RAM, the PVR structures for the two frames are broken
 up and placed at 0x000000 and 0x400000.
 
+If cached object lists are wanted (params->cached_list_size), the same
+amount is reserved at the end of each buffer set. Texture RAM starts at
+twice the end of the lower set, so the reserve takes twice its size from
+textures, and the two reserved areas sit at the same offset in each half.
+See pvr_cache.c.
+
 */
-void pvr_allocate_buffers(const pvr_init_params_t *params) {
+int pvr_allocate_buffers(const pvr_init_params_t *params) {
     volatile pvr_ta_buffers_t   *buf;
     volatile pvr_frame_buffers_t    *fbuf;
     int i, j;
-    uint32_t  outaddr, sconst, opb_size_accum, opb_total_size;
+    uint32_t  outaddr, sconst, opb_size_accum, opb_total_size, cache_size;
 
     /* Set screen sizes; pvr_init has ensured that we have a valid mode
        and all that by now, so we can freely dig into the vid_mode
@@ -472,6 +500,12 @@ void pvr_allocate_buffers(const pvr_init_params_t *params) {
         }
     }
 
+    /* Space reserved for cached object lists, in each buffer set */
+    cache_size = 0;
+
+    if(params->cached_list_size > 0)
+        cache_size = __align_up((uint32_t)params->cached_list_size, 128);
+
     /* Initialize each buffer set */
     for(i = 0; i < 2; i++) {
         /* Frame 0 goes at 0, Frame 1 goes at 0x400000 (half way) */
@@ -532,7 +566,28 @@ void pvr_allocate_buffers(const pvr_init_params_t *params) {
 
         /* N-byte align */
         outaddr = __align_up(outaddr, 128);
+
+        /* Reserved area for cached object lists */
+        if(cache_size) {
+            /* Both halves are laid out alike, so the reserved areas
+               are 0x400000 apart */
+            if(i == 0)
+                pvr_state.cache_area = outaddr;
+            else
+                assert(outaddr == pvr_state.cache_area + 0x400000);
+
+            outaddr += cache_size;
+        }
     }
+
+    /* The upper buffer set must end within the upper half of VRAM */
+    if(outaddr > 0x800000) {
+        dbglog(DBG_ERROR, "pvr: buffers end at %08lx, past the end of VRAM\n",
+               (unsigned long)outaddr);
+        return -1;
+    }
+
+    pvr_state.cache_area_size = cache_size;
 
     /* Texture ram is whatever is left */
     pvr_state.texture_base = (outaddr - 0x400000) * 2;
@@ -566,4 +621,6 @@ void pvr_allocate_buffers(const pvr_init_params_t *params) {
     dbglog(DBG_KDEBUG, "Free texture memory: %ld bytes\n",
            0x800000 - pvr_state.texture_base);
 #endif  /* !NDEBUG */
+
+    return 0;
 }

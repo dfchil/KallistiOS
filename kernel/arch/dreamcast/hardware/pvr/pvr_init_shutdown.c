@@ -91,7 +91,8 @@ int pvr_init(const pvr_init_params_t *params) {
     pvr_state.pass_count = params->pass_count > 1 ? params->pass_count : 1;
 
     /* Everything's clear, do the initial buffer pointer setup */
-    pvr_allocate_buffers(params);
+    if(pvr_allocate_buffers(params) < 0)
+        return -1;
 
     /* Initialize tile matrices */
     pvr_init_tile_matrices(!!params->autosort_disabled);
@@ -204,6 +205,9 @@ int pvr_init(const pvr_init_params_t *params) {
 int pvr_shutdown(void) {
     if(!pvr_state.valid)
         return -1;
+
+    /* Free cached object lists, waiting for any render using them */
+    pvr_cache_shutdown();
 
     /* Set us invalid */
     pvr_state.valid = 0;

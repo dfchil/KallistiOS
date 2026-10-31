@@ -108,6 +108,11 @@ This page serves as an index for all KallistiOS examples.
   - bgplane_hwtest
   - bgplane_texture
   - bumpmap
+  - cache_bench
+  - cache_hwtest
+  - cache_multipass
+  - cache_overlay
+  - cache_static_screen
   - cheap_shadow
   - fb_tex
   - modifier_volume

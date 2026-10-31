@@ -76,6 +76,30 @@ void pvr_start_dma(void) {
     dma_next_list(thd_get_current());
 }
 
+/* Start a frame rendered from a cache alone (pvr_scene_finish_cached), if
+   one is queued and the PVR is ready for it. The TA wasn't used, so its
+   buffers and registers stay as they are. Call with interrupts disabled;
+   returns true if the render was started. */
+bool pvr_start_cached_frame(void) {
+    if(pvr_state.ta_busy
+       && !pvr_state.render_busy
+       && (!pvr_state.render_completed || pvr_state.curr_to_texture)
+       && pvr_state.frame_cache) {
+        pvr_begin_cached_render(pvr_state.frame_cache);
+        pvr_state.frame_cache = NULL;
+        pvr_state.render_busy = 1;
+        pvr_sync_stats(PVR_SYNC_RNDSTART);
+
+        pvr_state.ta_busy = 0;
+        pvr_state.was_to_texture = pvr_state.curr_to_texture;
+
+        genwait_wake_all((void *)&pvr_state.ta_busy);
+        return true;
+    }
+
+    return false;
+}
+
 /* A list-done interrupt arrived. In a multipass scene, each enabled list
    finishes once per pass; the list counts as transferred after the last pass,
    so that the render starts only once the whole scene is in. Counting (rather
@@ -87,6 +111,11 @@ static inline void pvr_list_done(pvr_list_t list) {
 }
 
 static void pvr_render_lists(void) {
+    if(pvr_start_cached_frame()) {
+        thd_schedule(true);
+        return;
+    }
+
     if(pvr_state.ta_busy
        && !pvr_state.render_busy
        && (!pvr_state.render_completed || pvr_state.curr_to_texture)
@@ -162,6 +191,39 @@ void pvr_vblank_handler(uint32_t code, void *data) {
 
 void pvr_int_handler(uint32_t code, void *data) {
     (void)data;
+
+    // While pvr_cache_build() feeds the TA, its list-done events belong to
+    // the cache, not to a scene: record them and don't start a render.
+    if(pvr_state.cache_building) {
+        uint32_t list;
+
+        switch(code) {
+            case ASIC_EVT_PVR_OPAQUEDONE:
+                list = PVR_LIST_OP_POLY;
+                break;
+            case ASIC_EVT_PVR_TRANSDONE:
+                list = PVR_LIST_TR_POLY;
+                break;
+            case ASIC_EVT_PVR_OPAQUEMODDONE:
+                list = PVR_LIST_OP_MOD;
+                break;
+            case ASIC_EVT_PVR_TRANSMODDONE:
+                list = PVR_LIST_TR_MOD;
+                break;
+            case ASIC_EVT_PVR_PTDONE:
+                list = PVR_LIST_PT_POLY;
+                break;
+            default:
+                list = PVR_OPB_COUNT;
+                break;
+        }
+
+        if(list < PVR_OPB_COUNT) {
+            pvr_state.cache_lists_done |= BIT(list);
+            genwait_wake_all((void *)&pvr_state.cache_lists_done);
+            return;
+        }
+    }
 
     // What kind of event did we get?
     switch(code) {

@@ -336,8 +336,22 @@ static int pvr_write_bkg_poly(volatile uint32_t *dst, uint32_t w, uint32_t h) {
    opposite of ta_target) */
 void pvr_begin_queued_render(void) {
     volatile pvr_ta_buffers_t   *tbuf;
+
+    /* Get the appropriate buffer */
+    tbuf = pvr_state.ta_buffers + (pvr_state.ta_target ^ pvr_state.vbuf_doublebuf);
+
+    /* Throw the background polygon on the end of the TA's data. There is
+       always room for it: pvr_sync_reg_buffer() keeps PVR_BKG_POLY_RESERVE
+       bytes free at the end of the vertex buffer. */
+    pvr_begin_render(tbuf->tile_matrix, tbuf->vertex,
+                     PVR_GET(PVR_TA_VERTBUF_POS));
+}
+
+/* Begin a render from the given region array and parameter base, with the
+   background plane's parameters written at bg_addr */
+void pvr_begin_render(uint32_t tile_matrix, uint32_t param_base, uint32_t bg_addr) {
     volatile pvr_frame_buffers_t    *rbuf;
-    uint32_t      vert_pos, vert_end;
+    uint32_t      vert_end;
     int           vert_words;
     uint32_t      target_w, target_h;
     int bufn = pvr_state.view_target;
@@ -346,34 +360,28 @@ void pvr_begin_queued_render(void) {
         uint32_t i;
     } zclip;
 
-    /* Get the appropriate buffer */
-    tbuf = pvr_state.ta_buffers + (pvr_state.ta_target ^ pvr_state.vbuf_doublebuf);
     rbuf = pvr_state.frame_buffers + (bufn ^ 1);
     target_w = pvr_state.curr_to_texture ? pvr_state.to_txr_w : (uint32_t)pvr_state.w;
     target_h = pvr_state.curr_to_texture ? pvr_state.to_txr_h : (uint32_t)pvr_state.h;
 
-    /* Throw the background polygon on the end of the TA's data. There is
-       always room for it: pvr_sync_reg_buffer() keeps PVR_BKG_POLY_RESERVE
-       bytes free at the end of the vertex buffer. With FSAA the render
-       target is twice the screen width. */
-    vert_pos = PVR_GET(PVR_TA_VERTBUF_POS);
-    vert_words = pvr_write_bkg_poly((volatile uint32_t *)(PVR_RAM_BASE | vert_pos),
+    /* With FSAA the render target is twice the screen width. */
+    vert_words = pvr_write_bkg_poly((volatile uint32_t *)(PVR_RAM_BASE | bg_addr),
         pvr_state.curr_to_texture ? target_w : target_w << !!pvr_state.fsaa,
         target_h);
 
     /* Background plane location (ISP_BACKGND_T): the skip field is the
        vertex size in words minus 3, the tag address is the polygon's word
-       offset from the start of the vertex buffer, at bit 3. */
+       offset from the parameter base, at bit 3. */
     vert_end = FIELD_PREP(PVR_BKG_SKIP, vert_words - 3)
-               | FIELD_PREP(PVR_BKG_TAG_ADDR, (vert_pos - tbuf->vertex) >> 2);
+               | FIELD_PREP(PVR_BKG_TAG_ADDR, (bg_addr - param_base) >> 2);
 
     /* Reset the ISP/TSP, just in case */
     //PVR_SET(PVR_RESET, PVR_RESET_ISPTSP);
     //PVR_SET(PVR_RESET, PVR_RESET_NONE);
 
     /* Finish up rendering the current frame (into the other buffer) */
-    PVR_SET(PVR_ISP_TILEMAT_ADDR, tbuf->tile_matrix);
-    PVR_SET(PVR_ISP_VERTBUF_ADDR, tbuf->vertex);
+    PVR_SET(PVR_ISP_TILEMAT_ADDR, tile_matrix);
+    PVR_SET(PVR_ISP_VERTBUF_ADDR, param_base);
 
     if(!pvr_state.curr_to_texture)
         PVR_SET(PVR_RENDER_ADDR, rbuf->frame);

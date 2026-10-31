@@ -8,7 +8,7 @@
 OBJS := pvr_mem_core.o pvr_mem.o
 
 # Internal functions
-OBJS += pvr_buffers.o pvr_irq.o
+OBJS += pvr_buffers.o pvr_irq.o pvr_cache.o
 
 # Init / Shutdown / Globals / Misc
 OBJS += pvr_init_shutdown.o pvr_globals.o pvr_misc.o
