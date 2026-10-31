@@ -108,8 +108,8 @@ __BEGIN_DECLS
       rendered but not written out, and that tile keeps its pixels.
     - The order of the entries doesn't matter: row order, reversed and
       shuffled arrays render the same picture. KOS keeps its column order.
-    - Rewriting the array costs about 1.3 microseconds per tile: about
-      0.4 ms at 640x480, 0.7 ms with FSAA.
+    - Rewriting the array in one pass costs about 0.9 microseconds per
+      tile: about 0.26 ms at 640x480, 0.5 ms with FSAA.
 
     @{
 */
