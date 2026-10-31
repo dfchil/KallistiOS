@@ -110,6 +110,7 @@ This page serves as an index for all KallistiOS examples.
   - bumpmap
   - cache_bench
   - cache_hwtest
+  - cache_multipass
   - cache_overlay
   - cache_static_screen
   - cheap_shadow
