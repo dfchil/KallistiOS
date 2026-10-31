@@ -113,12 +113,23 @@ This page serves as an index for all KallistiOS examples.
   - modifier_volume
   - modifier_volume_tex
   - modifier_volume_zclip
+  - multipass_basic
+  - multipass_decal
+  - multipass_mirror
+  - multipass_sortmix
+  - multipass_trdepth
+  - multipass_viewmodel
   - palette
   - plasma
   - pvrline
   - pvrmark
   - pvrmark_strips
   - pvrmark_strips_direct
+  - region_hwtest
+  - region_multipass
+  - region_sortsplit
+  - region_static_frame
+  - region_tiles
   - strided_texture
   - texture_render
   - yuv_converter
