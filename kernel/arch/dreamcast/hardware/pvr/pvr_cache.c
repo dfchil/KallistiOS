@@ -60,9 +60,6 @@
 #define OL_LINK         0xe0000000
 #define OL_ADDR_MASK    0x00fffffc
 #define OL_OFFSET_MASK  0x001fffff
-#define OL_NO_LIST      0x80000000
-
-#define PVR_TILE_MATRIX_HEADER_SIZE 0x48
 
 #define VR(addr)        (*(volatile uint32_t *)(PVR_RAM_BASE + (addr)))
 
@@ -97,58 +94,35 @@ static void cache_clear(struct pvr_cache *c) {
     c->entries = 0;
 }
 
-/* Write the region array of copy h, for whole-frame renders. Same layout as
-   pvr_init_tile_matrix(): a zero header, a dummy entry, then one entry per
-   tile in column order. */
+/* Write the region array of copy h, for whole-frame renders: one pass over
+   every tile. */
 static void cache_write_region(struct pvr_cache *c, int h) {
-    volatile uint32_t *vr;
-    int x, y, l, tn;
+    pvr_ra_pass_t pass = { .flags = pvr_ra_pass_flags(0, 1, c->presort) };
+    int bin_size[PVR_OPB_COUNT];
+    int l;
 
-    vr = &VR(c->base[h] + c->region - PVR_TILE_MATRIX_HEADER_SIZE);
-
-    for(x = 0; x < PVR_TILE_MATRIX_HEADER_SIZE; x += 4)
-        *vr++ = 0;
-
-    vr[0] = 0x10000000;
-    vr[1] = vr[2] = vr[3] = vr[4] = vr[5] = OL_NO_LIST;
-    vr += 6;
-
-    for(x = 0; x < pvr_state.tw; x++) {
-        for(y = 0; y < pvr_state.th; y++) {
-            tn = (pvr_state.tw * y) + x;
-
-            vr[0] = (y << 8) | (x << 2) | ((uint32_t)c->presort << 29);
-
-            for(l = 0; l < PVR_OPB_COUNT; l++)
-                vr[1 + l] = (c->lists & BIT(l)) ? first_block(c, h, l, tn) : OL_NO_LIST;
-
-            vr += 6;
-        }
+    for(l = 0; l < PVR_OPB_COUNT; l++) {
+        bin_size[l] = c->opb_block[l];
+        pass.opb[l] = (c->lists & BIT(l)) ? first_block(c, h, l, 0) :
+                                            PVR_RA_LIST_EMPTY;
     }
 
-    vr[-6] |= BIT(31);
+    pvr_ra_write(c->base[h] + c->region, pvr_state.tw, pvr_state.th, bin_size,
+                 &pass, 1, NULL);
 }
 
-/* Point list slot l of every tile of both TA buffers' region arrays at the
-   cache (copy i for TA buffer i), or mark it empty if c is NULL. */
-static void cache_write_slot(int l, struct pvr_cache *c) {
-    volatile uint32_t *vr;
-    int i, x, y, tn;
+/* Attach c to list slot l of both TA buffers' region arrays, or detach
+   whatever is there if c is NULL. The arrays are built with the slot from
+   here on, whatever else changes them. */
+static void cache_set_slot(int l, struct pvr_cache *c) {
+    int i;
 
-    for(i = 0; i < 2; i++) {
-        /* Copy i's offsets are relative to TA buffer i's parameter base */
+    /* Copy i's offsets are relative to TA buffer i's parameter base */
+    for(i = 0; i < 2; i++)
         assert(pvr_state.ta_buffers[i].vertex == (uint32_t)i * HALF);
 
-        vr = &VR(pvr_state.ta_buffers[i].tile_matrix) + 6;
-
-        for(x = 0; x < pvr_state.tw; x++) {
-            for(y = 0; y < pvr_state.th; y++) {
-                tn = (pvr_state.tw * y) + x;
-                vr[1 + l] = c ? first_block(c, i, l, tn) : OL_NO_LIST;
-                vr += 6;
-            }
-        }
-    }
+    pvr_state.slot_cache[l] = c;
+    pvr_rebuild_tile_matrices();
 }
 
 /* Find room for size bytes in the reserved area. Returns the lower-half
@@ -221,11 +195,11 @@ pvr_cache_t *pvr_cache_create(const pvr_cache_params_t *params) {
     /* Region array, after its header */
     off = PVR_TILE_MATRIX_HEADER_SIZE;
     c->region = off;
-    off = align128(off + 4 * (6 + 6 * tiles));
+    off = align128(off + PVR_RA_SIZE(pvr_state.tw, pvr_state.th, 1));
 
     /* Background plane parameters for whole-frame renders */
     c->bg = off;
-    off = align128(off + sizeof(pvr_bkg_poly_t));
+    off = align128(off + PVR_BKG_POLY_RESERVE);
 
     /* TA parameter area */
     c->params = off;
@@ -592,8 +566,8 @@ int pvr_cache_attach(pvr_cache_t *c, int target) {
         return -1;
 
     if(target >= PVR_CACHE_PASS(0)) {
-        dbglog(DBG_ERROR, "pvr_cache_attach: cached passes need multipass "
-                          "rendering\n");
+        dbglog(DBG_ERROR, "pvr_cache_attach: cached passes aren't "
+                          "supported yet\n");
         return -1;
     }
 
@@ -614,8 +588,7 @@ int pvr_cache_attach(pvr_cache_t *c, int target) {
         return -1;
 
     o = irq_disable();
-    cache_write_slot(target, c);
-    pvr_state.slot_cache[target] = c;
+    cache_set_slot(target, c);
     irq_restore(o);
 
     return 0;
@@ -677,8 +650,7 @@ void pvr_cache_free(pvr_cache_t *c) {
 
     for(l = 0; l < PVR_OPB_COUNT; l++) {
         if(pvr_state.slot_cache[l] == c) {
-            cache_write_slot(l, NULL);
-            pvr_state.slot_cache[l] = NULL;
+            cache_set_slot(l, NULL);
         }
     }
 

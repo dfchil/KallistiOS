@@ -238,6 +238,9 @@ int pvr_cache_build(pvr_cache_t *cache, void (*send)(void *data), void *data);
     It saves the CPU and TA time of the cached polygons, but the ISP renders
     punch-through polygons several times slower than opaque ones.
 
+    In a multipass scene the cache supplies the list in the first pass. A
+    tile skipped with pvr_set_tile_enabled() doesn't draw the cache either.
+
     \param  cache           The cache to attach, or NULL to detach whatever
                             is attached to \p target.
     \param  target          PVR_CACHE_SLOT(list). PVR_CACHE_PASS(pass) is
@@ -254,12 +257,15 @@ int pvr_cache_attach(pvr_cache_t *cache, int target);
     Use instead of pvr_scene_finish(), after pvr_scene_begin() or
     pvr_scene_begin_rtt() and without submitting any list. The frame is
     rendered from the cache's own region array with no TA work; it goes
-    through the usual pipeline (render start, page flip, statistics).
+    through the usual pipeline (render start, page flip, statistics). That
+    array has one pass over every tile, whatever pvr_init_params_t::pass_count
+    says, and it ignores skipped tiles (see \ref pvr_region).
 
     \param  cache           The cache to render.
     \retval 0               On success.
     \retval -1              If \p cache is NULL, vertex DMA is enabled, or
-                            lists were submitted in this scene.
+                            lists were submitted in this scene, which includes
+                            moving on with pvr_scene_next_pass().
 */
 int pvr_scene_finish_cached(pvr_cache_t *cache);
 
