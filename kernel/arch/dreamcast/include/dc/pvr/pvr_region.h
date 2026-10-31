@@ -71,8 +71,17 @@ __BEGIN_DECLS
     An array is rewritten only when it doesn't match the per-tile state, so
     a program may set its whole layout every frame: if the result is the
     same as before, nothing is written. A rewrite costs one uncached write
-    per word, 6 words per tile (about 7 KB at 640x480, twice that with
-    FSAA).
+    per word, 6 words per tile and pass (about 7 KB at 640x480 in one pass,
+    twice that with FSAA).
+
+    \par Multipass scenes
+    With pvr_init_params_t::pass_count above 1, a tile has one entry per
+    pass. A skipped tile is left out of every pass. Each pass of each tile
+    has its own sort mode: pvr_set_tile_presort() and pvr_set_rect_presort()
+    set a tile in every pass, pvr_set_pass_presort() sets every tile of one
+    pass, and pvr_set_presort_mode() sets everything. The last call wins, so
+    to presort one pass everywhere and choose per tile in the others, set
+    the tiles first and the pass after them.
 
     \par Render to texture
     Scenes begun with pvr_scene_begin_txr() or pvr_scene_begin_rtt() use the
@@ -117,6 +126,8 @@ void pvr_get_tile_grid(int *tw, int *th);
 
 /** \brief   Set the translucent sort mode of one tile.
 
+    In a multipass scene this sets the tile in every pass.
+
     \param  tx              Tile column (see \ref pvr_region for FSAA).
     \param  ty              Tile row.
     \param  presort         True to presort the tile's translucent polygons
@@ -132,8 +143,8 @@ int pvr_set_tile_presort(int tx, int ty, bool presort);
 
 /** \brief   Set the translucent sort mode of a rectangle of the screen.
 
-    Sets the sort mode of every tile the rectangle touches. The rectangle is
-    clipped to the screen.
+    Sets the sort mode of every tile the rectangle touches, in every pass of
+    a multipass scene. The rectangle is clipped to the screen.
 
     \param  x               Left edge, in screen pixels.
     \param  y               Top edge, in screen pixels.

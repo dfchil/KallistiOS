@@ -15,6 +15,7 @@
 #include <kos/regfield.h>
 
 #include <stdio.h>
+#include <string.h>
 
 /*
    PVR interrupt handler; the way things are setup, we're gonna get
@@ -75,6 +76,16 @@ void pvr_start_dma(void) {
     dma_next_list(thd_get_current());
 }
 
+/* A list-done interrupt arrived. In a multipass scene, each enabled list
+   finishes once per pass; the list counts as transferred after the last pass,
+   so that the render starts only once the whole scene is in. Counting (rather
+   than resetting a mask at each pass) also keeps a late interrupt from an
+   earlier pass from being mistaken for one of the next pass. */
+static inline void pvr_list_done(pvr_list_t list) {
+    if(++pvr_state.lists_done[list] >= pvr_state.pass_count)
+        pvr_state.lists_transferred |= BIT(list);
+}
+
 static void pvr_render_lists(void) {
     if(pvr_state.ta_busy
        && !pvr_state.render_busy
@@ -109,6 +120,7 @@ static void pvr_render_lists(void) {
 
         // Switch to the clean TA buffer.
         pvr_state.lists_transferred = 0;
+        memset((void *)pvr_state.lists_done, 0, sizeof(pvr_state.lists_done));
         pvr_sync_reg_buffer();
 
         // The TA is no longer busy.
@@ -154,19 +166,19 @@ void pvr_int_handler(uint32_t code, void *data) {
     // What kind of event did we get?
     switch(code) {
         case ASIC_EVT_PVR_OPAQUEDONE:
-            pvr_state.lists_transferred |= BIT(PVR_LIST_OP_POLY);
+            pvr_list_done(PVR_LIST_OP_POLY);
             break;
         case ASIC_EVT_PVR_TRANSDONE:
-            pvr_state.lists_transferred |= BIT(PVR_LIST_TR_POLY);
+            pvr_list_done(PVR_LIST_TR_POLY);
             break;
         case ASIC_EVT_PVR_OPAQUEMODDONE:
-            pvr_state.lists_transferred |= BIT(PVR_LIST_OP_MOD);
+            pvr_list_done(PVR_LIST_OP_MOD);
             break;
         case ASIC_EVT_PVR_TRANSMODDONE:
-            pvr_state.lists_transferred |= BIT(PVR_LIST_TR_MOD);
+            pvr_list_done(PVR_LIST_TR_MOD);
             break;
         case ASIC_EVT_PVR_PTDONE:
-            pvr_state.lists_transferred |= BIT(PVR_LIST_PT_POLY);
+            pvr_list_done(PVR_LIST_PT_POLY);
             break;
         case ASIC_EVT_PVR_RENDERDONE_TSP:
             pvr_state.render_busy = 0;
