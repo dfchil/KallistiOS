@@ -24,9 +24,14 @@
 #ifndef __DC_PVR_PVR_MISC_H
 #define __DC_PVR_PVR_MISC_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include <kos/cdefs.h>
+
+#include <dc/pvr/pvr_mem.h>
+#include <dc/pvr/pvr_header.h>
+
 __BEGIN_DECLS
 
 
@@ -74,17 +79,180 @@ static inline uint32_t PVR_PACK_16BIT_UV(float u, float v) {
     rendering process.
 */
 
+/** \defgroup pvr_bg Background Plane
+    \brief          The polygon the PVR draws behind everything else
+    \ingroup        pvr_global
+
+    The PVR fills the area of the screen not covered by any other polygon with
+    the background plane. It is a real polygon: three vertices with a position,
+    a color and optionally texture coordinates. The ISP draws it into every
+    tile when it clears the depth buffer, at the depth set with
+    pvr_set_zclip().
+
+    The three vertices do not limit the area that is drawn. They only define a
+    plane, and the plane fills the whole render target: color (and texture
+    coordinates) are extended from the three vertices over the full screen.
+    The vertices may lie anywhere, on screen or not: the hardware accepts
+    vertices far off screen (tested at +-10000 pixels), in either winding, and
+    even a triangle smaller than a pixel. By default they are the
+    bottom-left, top-left and bottom-right corners of the render target, which
+    is the screen or, while rendering to a texture, the render-to-texture area.
+
+    With the default vertices, the top-right corner lies outside the triangle
+    and gets color(top-left) + color(bottom-right) - color(bottom-left). A
+    gradient along one axis (top to bottom, or left to right) stays in range;
+    a tilted gradient can go below 0 or above 255 there. The hardware clamps
+    each channel to 0..255 (it does not wrap), so such a gradient saturates
+    and goes flat towards that corner. To keep the whole gradient visible,
+    place the vertices with pvr_set_bg_poly() so that the colors are known
+    where the gradient is extreme, or pick colors that keep all four screen
+    corners in range.
+
+    Shading costs nothing extra: the hardware shades the plane with Gouraud
+    shading whether its vertices have one color or three, and the render time
+    of a gradient is the same as that of a flat color.
+
+    In a 16-bit (RGB565) frame buffer a slow gradient shows bands one color
+    step wide, clearly visible on a sky or a grey ramp, with a green tint on
+    every other band of a grey ramp (green has 6 bits, red and blue 5).
+    The PVR's dithering, which vid_set_mode() turns on for 16-bit modes,
+    hides them well.
+
+    \note   When FSAA is enabled (see pvr_init_params_t::fsaa_enabled), the
+            render target is twice as wide as the screen, and the x positions
+            given to pvr_set_bg_poly() are in that doubled space, like the
+            positions of all other vertices. The default vertices are
+            placed accordingly, so pvr_set_bg_colors() covers the screen
+            with FSAA on or off.
+
+    All the functions in this group take effect from the next frame that
+    begins to render, and the setting stays until it is changed. Call them
+    between frames (e.g. after pvr_wait_ready()), not during a frame.
+*/
+
+/** \brief   Background plane vertex.
+    \ingroup pvr_bg
+
+    One of the three vertices given to pvr_set_bg_poly().
+*/
+typedef struct pvr_bg_vertex {
+    float    x;     /**< \brief X position, in render target pixels */
+    float    y;     /**< \brief Y position, in render target pixels */
+    float    z;     /**< \brief 1/w, must be greater than zero.
+
+                         Used only to interpolate color and texture
+                         coordinates. Give all three vertices the same value
+                         (any, e.g. 1.0f; the default vertices use
+                         FLT_EPSILON) for interpolation that is linear across
+                         the screen. Different values give perspective-correct
+                         interpolation, as for other polygons. The z values do
+                         not change the depth of the plane: it is always the
+                         pvr_set_zclip() value, so the plane stays behind all
+                         geometry whatever z is given here. */
+    float    u;     /**< \brief Texture U coordinate (textured plane only) */
+    float    v;     /**< \brief Texture V coordinate (textured plane only) */
+    uint32_t argb;  /**< \brief Color, packed ARGB (alpha is ignored) */
+} pvr_bg_vertex_t;
+
 /** \brief   Set the background plane color.
-    \ingroup pvr_global
+    \ingroup pvr_bg
 
     This function sets the color of the area of the screen not covered by any
     other polygons.
 
+    It also returns the background plane to its default: the default vertices,
+    one color everywhere, and no texture.
+
     \param  r               Red component of the color to set
     \param  g               Green component of the color to set
     \param  b               Blue component of the color to set
+
+    \sa pvr_set_bg_colors(), pvr_set_bg_poly(), pvr_set_bg_texture()
 */
 void pvr_set_bg_color(float r, float g, float b);
+
+/** \brief   Set a background plane color for each default vertex.
+    \ingroup pvr_bg
+
+    This function places the background plane's vertices on the bottom-left,
+    top-left and bottom-right corners of the render target and gives each its
+    own color. The plane is shaded with a linear gradient over the whole
+    screen.
+
+    The top-right corner gets top_left + bottom_right - bottom_left, per
+    channel. For a vertical gradient, pass the bottom color twice
+    (bottom_left = bottom_right); for a horizontal one, pass the left color
+    twice (bottom_left = top_left).
+
+    If a background texture is set (see pvr_set_bg_texture()), it is kept: the
+    colors modulate it, and the texture is stretched once over the render
+    target (u from 0 at the left to 1 at the right, v from 0 at the top to 1
+    at the bottom).
+
+    \param  bottom_left     Packed ARGB color at the bottom-left corner
+    \param  top_left        Packed ARGB color at the top-left corner
+    \param  bottom_right    Packed ARGB color at the bottom-right corner
+
+    \sa PVR_PACK_COLOR()
+*/
+void pvr_set_bg_colors(uint32_t bottom_left, uint32_t top_left,
+                       uint32_t bottom_right);
+
+/** \brief   Set the background plane's three vertices.
+    \ingroup pvr_bg
+
+    This function gives full control over the background plane: the position,
+    color and texture coordinates of its three vertices. The vertices need not
+    be on screen; they only define the plane, which always fills the whole
+    render target.
+
+    The vertices may be given in either winding order. If a texture is set
+    (see pvr_set_bg_texture()), it is kept.
+
+    \param  v               The three vertices
+    \retval 0               On success
+    \retval -1              If the vertices are collinear (they do not define
+                            a plane), or a z is not greater than zero. The
+                            background plane is not changed.
+*/
+int pvr_set_bg_poly(const pvr_bg_vertex_t v[3]);
+
+/** \brief   Set or remove the background plane's texture.
+    \ingroup pvr_bg
+
+    This function textures the background plane, giving a full-screen backdrop
+    without any geometry. The texture coordinates are those of the vertices:
+    stretched once over the render target after pvr_set_bg_colors(), or as
+    given to pvr_set_bg_poly(). Like the color, the texture coordinates
+    extend over the whole render target, outside the triangle too. Texture
+    coordinates outside 0 to 1 repeat the texture.
+
+    The texture costs render time like a textured polygon over the visible
+    background does, mostly in texture cache misses. Over a 640x480 screen,
+    measured against a flat background (about 3.15 ms): an 8x8 or 64x64
+    texture costs nothing, 256x256 stretched over the screen 0.2 ms (nearest)
+    or 0.85 ms (bilinear), 1024x1024 stretched 3.7 ms, and 1024x1024 at one
+    texel per pixel 1.1 ms (nearest) or 2.4 ms (bilinear).
+
+    The texture is modulated by the vertex colors (use white, 0xffffffff, for
+    the texture's own colors). Its alpha is ignored. Mipmaps are not used.
+
+    The texture stays set until this function is called again with NULL, or
+    until pvr_set_bg_color() is called. The caller must keep the texture in
+    video memory as long as it is set.
+
+    \param  txr             The texture, or NULL to remove the texture
+    \param  textureformat   The texture format, see \ref pvr_txr_fmts
+    \param  tw              Texture width, a power of two from 8 to 1024
+    \param  th              Texture height, a power of two from 8 to 1024
+    \param  filtering       Texture filtering mode (PVR_FILTER_NEAREST or
+                            PVR_FILTER_BILINEAR)
+    \retval 0               On success
+    \retval -1              If the size or filter is invalid. The background
+                            plane is not changed.
+*/
+int pvr_set_bg_texture(pvr_ptr_t txr, int textureformat, int tw, int th,
+                       pvr_filter_mode_t filtering);
 
 /** \brief   Set cheap shadow parameters.
     \ingroup pvr_global
