@@ -30,37 +30,100 @@
 
 #define LIST_ENABLED(i) (pvr_state.lists_enabled & BIT(i))
 
-#define PVR_TILE_MATRIX_HEADER_SIZE 0x48
+uint32_t pvr_ra_pass_flags(int p, int pass_count, bool presort) {
+    uint32_t flags = presort ? PVR_RA_PRESORT : 0;
 
+    /* Every pass after the first keeps the depth and colour of the tile, and
+       every pass before the last keeps the tile on chip. */
+    if(p > 0)
+        flags |= PVR_RA_ZKEEP;
 
-/* Write one region array entry (the hardware's name for the tile matrix
-   entry): a control word and the five list pointers, in the order OP,
-   OP modifier, TR, TR modifier, PT. flags holds the PVR_TILE_* control bits;
-   the tile position is added here. Returns the address of the next entry. */
-static inline uint32_t *pvr_tile_entry_write(uint32_t *vr, int x, int y,
-                                             uint32_t flags,
-                                             const uint32_t lists[PVR_OPB_COUNT]) {
-    vr[0] = flags | ((uint32_t)y << 8) | ((uint32_t)x << 2);
-    vr[1] = lists[0];
-    vr[2] = lists[1];
-    vr[3] = lists[2];
-    vr[4] = lists[3];
-    vr[5] = lists[4];
+    if(p < pass_count - 1)
+        flags |= PVR_RA_NO_WRITEOUT;
 
-    return vr + 6;
+    return flags;
 }
 
-/* Fill in the list pointers of tile number tn (tw * y + x) in TA buffer buf.
-   If a list isn't enabled, its pointer is set to PVR_TILE_LIST_EMPTY, which
-   tells the PVR to ignore it. */
-static inline void pvr_tile_entry_lists(const volatile pvr_ta_buffers_t *buf,
-                                        int tn, uint32_t lists[PVR_OPB_COUNT]) {
-    int i;
+size_t pvr_ra_write(uint32_t tile_matrix, int tw, int th,
+                    const int bin_size[PVR_OPB_COUNT],
+                    const pvr_ra_pass_t *passes, int pass_count,
+                    const volatile uint64_t *skipped) {
+    uint32_t *vr, *first;   /* Note: We're working in 4-byte pointer maths here */
+    const pvr_ra_pass_t *pass;
+    uint32_t flags;
+    int x, y, p, i, tn;
 
-    for(i = 0; i < PVR_OPB_COUNT; i++)
-        lists[i] = LIST_ENABLED(i) ?
-                   buf->opb_addresses[i] + (pvr_state.opb_size[i] * tn) :
-                   PVR_TILE_LIST_EMPTY;
+    vr = (uint32_t *)PVR_RAM_BASE + BYTES_TO_WORDS(tile_matrix - PVR_TILE_MATRIX_HEADER_SIZE);
+
+    /*
+        FIXME? Is this header necessary? If we're moving the tilematrix
+        register to after it, how does the Dreamcast know this is here?
+    */
+
+    /* Header of zeros */
+    for(i = 0; i < PVR_TILE_MATRIX_HEADER_SIZE; i += 4)
+        *vr++ = 0;
+
+    first = vr;
+
+    /* Initial init tile */
+    vr[0] = PVR_RA_NO_WRITEOUT;
+    vr[1] = PVR_RA_LIST_EMPTY;
+    vr[2] = PVR_RA_LIST_EMPTY;
+    vr[3] = PVR_RA_LIST_EMPTY;
+    vr[4] = PVR_RA_LIST_EMPTY;
+    vr[5] = PVR_RA_LIST_EMPTY;
+    vr += PVR_RA_ENTRY_WORDS;
+
+    /*
+        This sets up the addresses for each list, for each tile, for each
+        pass. If a list isn't enabled, then we set the address to 0x80000000
+        which tells the PVR to ignore it.
+
+        Memory for each frame is arranged sort-of like this:
+
+        [vertex_buffer | object pointer buffers | tilematrix header | tile matrix]
+
+        The entries of a tile's passes follow each other, in pass order.
+    */
+    for(x = 0; x < tw; x++) {
+        for(y = 0; y < th; y++) {
+            if(skipped && ((skipped[y] >> x) & 1))
+                continue;
+
+            tn = (tw * y) + x;
+
+            for(p = 0; p < pass_count; p++) {
+                pass = passes + p;
+                flags = pass->flags & PVR_RA_FLAGS_MASK;
+
+                if(pass->presort && ((pass->presort[y] >> x) & 1))
+                    flags |= PVR_RA_PRESORT;
+
+                /* Control word */
+                vr[0] = PVR_RA_TILE_Y(y) | PVR_RA_TILE_X(x) | flags;
+
+                /* Opaque poly, opaque volume mod, translucent poly,
+                   translucent volume mod and punch-thru poly buffers */
+                for(i = 0; i < PVR_OPB_COUNT; i++) {
+                    if(pass->opb[i] & PVR_RA_LIST_EMPTY)
+                        vr[1 + i] = PVR_RA_LIST_EMPTY;
+                    else
+                        vr[1 + i] = pass->opb[i] + (bin_size[i] * tn);
+                }
+
+                vr += PVR_RA_ENTRY_WORDS;
+            }
+        }
+    }
+
+    /* The hardware never finishes a render whose last entry has
+       PVR_RA_NO_WRITEOUT set, as the dummy entry has. With every tile
+       skipped, the array is marked empty and the render isn't started at
+       all (see pvr_render_lists()). */
+    vr[-PVR_RA_ENTRY_WORDS] |= PVR_RA_LAST;
+
+    return WORDS_TO_BYTES(vr - first);
 }
 
 /* Bit mask of tile columns x0 to x1 (inclusive) in one row of the per-tile
@@ -73,68 +136,42 @@ static inline uint64_t pvr_tile_cols(int x0, int x1) {
 
 /* (Re)build the region array of TA buffer which from the per-tile tables.
 
-   Tiles are listed in column order (x outer, y inner), as KOS always has.
-   If skip is true, tiles marked in tile_skipped are left out, so the PVR
-   neither renders them nor writes them to the frame buffer. The first entry
-   is an empty dummy; if every tile is skipped, it is also the last, and the
-   array must not be rendered. */
+   If skip is true, tiles marked in tile_skipped are left out in every pass,
+   so the PVR neither renders them nor writes them to the frame buffer. */
 static void pvr_build_tile_matrix(int which, bool skip) {
-    static const uint32_t empty[PVR_OPB_COUNT] = {
-        PVR_TILE_LIST_EMPTY, PVR_TILE_LIST_EMPTY, PVR_TILE_LIST_EMPTY,
-        PVR_TILE_LIST_EMPTY, PVR_TILE_LIST_EMPTY
-    };
-    volatile pvr_ta_buffers_t   *buf;
-    uint32_t    lists[PVR_OPB_COUNT];
-    uint32_t    *vr, *first, *last;  /* 4-byte pointer maths */
-    uint64_t    presort, skipped;
-    int     x, y;
+    volatile pvr_ta_buffers_t *buf;
+    pvr_ra_pass_t passes[PVR_MAX_PASSES];
+    int bin_size[PVR_OPB_COUNT];
+    size_t size;
+    int p, i, y;
 
     buf = pvr_state.ta_buffers + which;
-    vr = (uint32_t *)PVR_RAM_BASE + BYTES_TO_WORDS(buf->tile_matrix);
 
-    /* Initial init tile */
-    first = last = vr;
-    vr = pvr_tile_entry_write(vr, 0, 0, PVR_TILE_NO_WRITEOUT, empty);
+    for(i = 0; i < PVR_OPB_COUNT; i++)
+        bin_size[i] = pvr_state.opb_size[i];
 
-    /*
-        This sets up the addresses for each list, for each tile in the
-        memory we allocate in pvr_allocate_buffers. If a list isn't enabled
-        for a tile, then we set the address to 0x80000000 which tells the PVR
-        to ignore it.
+    /* Each pass has its own first object pointer blocks, one pass after the
+       other in the OPB area. */
+    for(p = 0; p < pvr_state.pass_count; p++) {
+        passes[p].flags = pvr_ra_pass_flags(p, pvr_state.pass_count, false);
+        passes[p].presort = pvr_state.tile_presort[p];
 
-        Memory for each frame is arranged sort-of like this:
-
-        [vertex_buffer | object pointer buffers | tilematrix header | tile matrix]
-
-        This is the tile matrix setup.
-    */
-
-    for(x = 0; x < pvr_state.tw; x++) {
-        for(y = 0; y < pvr_state.th; y++) {
-            skipped = pvr_state.tile_skipped[y];
-            presort = pvr_state.tile_presort[y];
-
-            if(skip && ((skipped >> x) & 1))
-                continue;
-
-            pvr_tile_entry_lists(buf, (pvr_state.tw * y) + x, lists);
-            last = vr;
-            vr = pvr_tile_entry_write(vr, x, y,
-                                      ((presort >> x) & 1) ? PVR_TILE_PRESORT : 0,
-                                      lists);
-        }
+        for(i = 0; i < PVR_OPB_COUNT; i++)
+            passes[p].opb[i] = LIST_ENABLED(i) ?
+                buf->opb_addresses[i] + buf->opb_size * p : PVR_RA_LIST_EMPTY;
     }
 
-    /* The hardware never finishes a render whose last entry has
-       PVR_TILE_NO_WRITEOUT set, as the dummy entry has. With every tile
-       skipped, the array is marked empty and the render isn't started at
-       all (see pvr_render_lists()). */
-    last[0] |= PVR_TILE_LAST;
-    buf->tile_matrix_empty = (last == first);
+    size = pvr_ra_write(buf->tile_matrix, pvr_state.tw, pvr_state.th, bin_size,
+                        passes, pvr_state.pass_count,
+                        skip ? pvr_state.tile_skipped : NULL);
+
+    buf->tile_matrix_empty = (size == PVR_RA_SIZE(0, 0, 0));
 
     /* Remember what this array was built from */
     for(y = 0; y < pvr_state.th; y++) {
-        buf->tile_matrix_presort[y] = pvr_state.tile_presort[y];
+        for(p = 0; p < pvr_state.pass_count; p++)
+            buf->tile_matrix_presort[p][y] = pvr_state.tile_presort[p][y];
+
         buf->tile_matrix_skipped[y] = pvr_state.tile_skipped[y];
     }
 
@@ -144,14 +181,15 @@ static void pvr_build_tile_matrix(int which, bool skip) {
 /* Does the region array of TA buffer which match the per-tile state? */
 static bool pvr_tile_matrix_current(int which, bool skip) {
     volatile pvr_ta_buffers_t *buf = pvr_state.ta_buffers + which;
-    int y;
+    int y, p;
 
     if(buf->tile_matrix_skips != skip)
         return false;
 
     for(y = 0; y < pvr_state.th; y++) {
-        if(buf->tile_matrix_presort[y] != pvr_state.tile_presort[y])
-            return false;
+        for(p = 0; p < pvr_state.pass_count; p++)
+            if(buf->tile_matrix_presort[p][y] != pvr_state.tile_presort[p][y])
+                return false;
 
         if(skip && buf->tile_matrix_skipped[y] != pvr_state.tile_skipped[y])
             return false;
@@ -160,44 +198,22 @@ static bool pvr_tile_matrix_current(int which, bool skip) {
     return true;
 }
 
-/* Fill Tile Matrix buffers. This function takes a base address and sets up
-   the rendering structures there. Each tile of the screen (32x32) receives
-   a small buffer space. */
-static void pvr_init_tile_matrix(int which) {
-    uint32_t      *vr;  /* Note: We're working in 4-byte pointer maths in this function */
-    int     i;
-
-    vr = (uint32_t *)PVR_RAM_BASE;
-
-    /*
-        FIXME? Is this header necessary? If we're moving the tilematrix
-        register to after it, how does the Dreamcast know this is here?
-    */
-
-    /* Header of zeros */
-    vr += BYTES_TO_WORDS(pvr_state.ta_buffers[which].tile_matrix -
-                         PVR_TILE_MATRIX_HEADER_SIZE);
-
-    for(i = 0; i < PVR_TILE_MATRIX_HEADER_SIZE; i += 4)
-        * vr++ = 0;
-
-    pvr_build_tile_matrix(which, false);
-}
-
 /* Fill all tile matrices */
 void pvr_init_tile_matrices(bool presort) {
-    int i;
+    int i, p;
 
-    /* Every tile rendered, every tile in the same sort mode */
+    /* Every tile rendered, every tile of every pass in the same sort mode */
     for(i = 0; i < PVR_TILE_MAX; i++) {
-        pvr_state.tile_presort[i] = presort ? ~0ULL : 0;
+        for(p = 0; p < PVR_MAX_PASSES; p++)
+            pvr_state.tile_presort[p][i] = presort ? ~0ULL : 0;
+
         pvr_state.tile_skipped[i] = 0;
     }
 
     pvr_state.tiles_skipped = 0;
 
     for(i = 0; i < 2; i++)
-        pvr_init_tile_matrix(i);
+        pvr_build_tile_matrix(i, false);
 }
 
 /* Bring the region array of the TA buffer about to be filled up to date.
@@ -228,6 +244,16 @@ static void pvr_tile_table_set(volatile uint64_t *table, int tx0, int ty0,
 
         pvr_state.tiles_skipped = n;
     }
+}
+
+/* Set the sort mode of a rectangle of tiles in every pass. */
+static void pvr_tile_presort_set(int tx0, int ty0, int tx1, int ty1,
+                                 bool presort) {
+    int p;
+
+    for(p = 0; p < pvr_state.pass_count; p++)
+        pvr_tile_table_set(pvr_state.tile_presort[p], tx0, ty0, tx1, ty1,
+                           presort);
 }
 
 /* Clip a rectangle in tiles to the screen. Returns false if nothing is
@@ -270,7 +296,7 @@ int pvr_set_tile_presort(int tx, int ty, bool presort) {
        tx >= pvr_state.tw || ty >= pvr_state.th)
         return -1;
 
-    pvr_tile_table_set(pvr_state.tile_presort, tx, ty, tx, ty, presort);
+    pvr_tile_presort_set(tx, ty, tx, ty, presort);
 
     return 0;
 }
@@ -291,7 +317,7 @@ int pvr_set_rect_presort(int x, int y, int w, int h, bool presort) {
     if(!pvr_tile_rect(x, y, w, h, &tx0, &ty0, &tx1, &ty1))
         return -1;
 
-    pvr_tile_table_set(pvr_state.tile_presort, tx0, ty0, tx1, ty1, presort);
+    pvr_tile_presort_set(tx0, ty0, tx1, ty1, presort);
 
     return 0;
 }
@@ -315,20 +341,13 @@ void pvr_get_tile_grid(int *tw, int *th) {
         *th = pvr_state.th;
 }
 
-void pvr_set_presort_mode(bool presort) {
-    bool skip;
-
-    if(!pvr_state.valid)
-        return;
-
-    pvr_tile_table_set(pvr_state.tile_presort, 0, 0, pvr_state.tw - 1,
-                       pvr_state.th - 1, presort);
-
-    /* As before per-tile control existed, the change also applies to the
-       scene being registered (if any), so rewrite the array of the TA buffer
-       being filled right away. The other one follows at its next scene. */
-    skip = !(pvr_state.ta_checked_ready ? pvr_state.curr_to_texture :
-             pvr_state.next_to_texture) && pvr_state.tiles_skipped;
+/* As before per-tile control existed, a change to the sort mode of the whole
+   screen or of a pass also applies to the scene being registered (if any),
+   so rewrite the array of the TA buffer being filled right away. The other
+   one follows at its next scene. */
+static void pvr_apply_presort(void) {
+    bool skip = !(pvr_state.ta_checked_ready ? pvr_state.curr_to_texture :
+                  pvr_state.next_to_texture) && pvr_state.tiles_skipped;
 
     if(pvr_tile_matrix_current(pvr_state.ta_target, skip))
         return;
@@ -337,6 +356,25 @@ void pvr_set_presort_mode(bool presort) {
             pvr_wait_render_done();
 
     pvr_build_tile_matrix(pvr_state.ta_target, skip);
+}
+
+void pvr_set_presort_mode(bool presort) {
+    if(!pvr_state.valid)
+        return;
+
+    pvr_tile_presort_set(0, 0, pvr_state.tw - 1, pvr_state.th - 1, presort);
+    pvr_apply_presort();
+}
+
+int pvr_set_pass_presort(int pass, bool presort) {
+    if(!pvr_state.valid || pass < 0 || pass >= pvr_state.pass_count)
+        return -1;
+
+    pvr_tile_table_set(pvr_state.tile_presort[pass], 0, 0, pvr_state.tw - 1,
+                       pvr_state.th - 1, presort);
+    pvr_apply_presort();
+
+    return 0;
 }
 
 /* Allocate PVR buffers given a set of parameters
@@ -459,9 +497,10 @@ void pvr_allocate_buffers(const pvr_init_params_t *params) {
         buf->opb = outaddr;
         buf->opb_size = opb_total_size;
 
-        /* Allocate extra space for overflow (when one OPB isn't big enough) */
+        /* One set of first OPBs per render pass, then extra space for
+           overflow (when one OPB isn't big enough). */
         buf->opb_overflow_count = params->opb_overflow_count;
-        outaddr += opb_total_size * (1 + buf->opb_overflow_count);
+        outaddr += opb_total_size * (pvr_state.pass_count + buf->opb_overflow_count);
 
         /* Set up the opb pointers to each section */
         opb_size_accum = 0;
@@ -480,7 +519,7 @@ void pvr_allocate_buffers(const pvr_init_params_t *params) {
 
         /* Tile Matrix */
         buf->tile_matrix = outaddr;
-        buf->tile_matrix_size = WORDS_TO_BYTES(6 + 6 * pvr_state.tw * pvr_state.th);
+        buf->tile_matrix_size = PVR_RA_SIZE(pvr_state.tw, pvr_state.th, pvr_state.pass_count);
         outaddr += buf->tile_matrix_size;
 
         /* N-byte align */

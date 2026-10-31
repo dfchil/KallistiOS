@@ -109,6 +109,12 @@ This page serves as an index for all KallistiOS examples.
   - modifier_volume
   - modifier_volume_tex
   - modifier_volume_zclip
+  - multipass_basic
+  - multipass_decal
+  - multipass_mirror
+  - multipass_sortmix
+  - multipass_trdepth
+  - multipass_viewmodel
   - palette
   - plasma
   - pvrline

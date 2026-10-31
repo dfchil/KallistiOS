@@ -134,7 +134,8 @@ int pvr_set_vertical_scale(float factor);
 
     This function sets the translucent polygon sort mode for the next frame of
     output, potentially switching between autosort and presort mode. It sets
-    every tile of the screen; see \ref pvr_region to set the mode per tile.
+    every tile of the screen in every render pass; see \ref pvr_region to set
+    the mode per tile.
 
     For most programs, you'll probably want to set this at initialization time
     (with the autosort_disabled field in the pvr_init_params_t structure) and
@@ -148,6 +149,28 @@ int pvr_set_vertical_scale(float factor);
     \sa pvr_set_rect_presort(), pvr_set_tile_presort()
 */
 void pvr_set_presort_mode(bool presort);
+
+/** \brief   Set the translucent polygon sort mode of one render pass.
+    \ingroup pvr_multipass
+
+    In a multipass scene (see pvr_init_params_t::pass_count), each pass sorts
+    its translucent list on its own: autosorted per pixel, or presorted
+    (drawn in submission order). This function sets the mode of every tile of
+    one pass; pvr_set_presort_mode() sets every pass, and \ref pvr_region sets
+    single tiles. The initial mode of every pass comes from
+    pvr_init_params_t::autosort_disabled.
+
+    The setting is kept for later frames, until changed again. Called while a
+    scene is being submitted, it applies to that scene.
+
+    \param  pass            The pass, from 0 to pass_count - 1.
+    \param  presort         True for presort mode, false for autosort mode.
+
+    \retval 0               On success.
+    \retval -1              If pass is out of range or the PVR is not
+                            initialized.
+*/
+int pvr_set_pass_presort(int pass, bool presort);
 
 /** \brief   Retrieve the current VBlank count.
     \ingroup pvr_stats
