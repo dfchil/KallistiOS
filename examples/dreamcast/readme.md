@@ -110,15 +110,15 @@ This page serves as an index for all KallistiOS examples.
   - bumpmap
   - cheap_shadow
   - fb_tex
+  - listcont_basic
+  - listcont_decal
+  - listcont_mirror
+  - listcont_sortmix
+  - listcont_trdepth
+  - listcont_viewmodel
   - modifier_volume
   - modifier_volume_tex
   - modifier_volume_zclip
-  - multipass_basic
-  - multipass_decal
-  - multipass_mirror
-  - multipass_sortmix
-  - multipass_trdepth
-  - multipass_viewmodel
   - palette
   - plasma
   - pvrline
@@ -126,7 +126,7 @@ This page serves as an index for all KallistiOS examples.
   - pvrmark_strips
   - pvrmark_strips_direct
   - region_hwtest
-  - region_multipass
+  - region_listcont
   - region_sortsplit
   - region_static_frame
   - region_tiles

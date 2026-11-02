@@ -1,10 +1,10 @@
 # KallistiOS ##version##
 #
-# examples/dreamcast/pvr/multipass_decal/Makefile
+# examples/dreamcast/pvr/listcont_decal/Makefile
 #
 
-TARGET = multipass_decal.elf
-OBJS = multipass_decal.o
+TARGET = listcont_decal.elf
+OBJS = listcont_decal.o
 
 all: rm-elf $(TARGET)
 

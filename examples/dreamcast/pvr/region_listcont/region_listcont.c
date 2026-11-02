@@ -1,17 +1,17 @@
 /* KallistiOS ##version##
 
-   examples/dreamcast/pvr/region_multipass/region_multipass.c
+   examples/dreamcast/pvr/region_listcont/region_listcont.c
    Copyright (C) 2026 Daniel Fairchild
 
-   Hardware test for per-tile region array control in a two-pass scene. Not
+   Hardware test for per-tile region array control in a two-group scene. Not
    an example: it renders test scenes, reads the frame buffer back with the
    CPU, and checks the region array KOS wrote.
 
-   T1  Skipped tiles: are they left out of both passes, keeping their pixels,
-       while the other tiles show both passes?
-   T2  Sort modes: does each pass of each tile sort as the last call to
-       pvr_set_presort_mode(), pvr_set_pass_presort() or pvr_set_rect_presort()
-       said? (Pass 0 draws the top of the screen, pass 1 the bottom.)
+   T1  Skipped tiles: are they left out of both groups, keeping their pixels,
+       while the other tiles show both groups?
+   T2  Sort modes: does each group of each tile sort as the last call to
+       pvr_set_presort_mode(), pvr_set_group_presort() or pvr_set_rect_presort()
+       said? (Group 0 draws the top of the screen, group 1 the bottom.)
    T3  One tile enabled, then none: does the frame complete? The last entry
        of the array must be able to write out, or the render never ends.
 
@@ -45,7 +45,7 @@
 #define RA_NO_WRITEOUT  BIT(28)
 #define RA_ENTRY_WORDS  6
 
-#define PASSES 2
+#define GROUPS 2
 
 static pvr_poly_hdr_t op_hdr, tr_hdr;
 static float xs = USE_FSAA ? 2.0f : 1.0f;
@@ -74,8 +74,8 @@ static void quad(float x0, float y0, float x1, float y1, float z, uint32_t c) {
     pvr_prim(&v, sizeof(v));
 }
 
-/* Every tile shows both passes: the top half of each tile row is pass 0's
-   colour, the bottom half pass 1's. */
+/* Every tile shows both groups: the top half of each tile row is group 0's
+   colour, the bottom half group 1's. */
 static void scene_tiles(uint32_t under, uint32_t over) {
     int y;
 
@@ -87,7 +87,7 @@ static void scene_tiles(uint32_t under, uint32_t over) {
     quad(0, 0, SCREEN_W, SCREEN_H, 1.0f, under);
     pvr_list_finish();
 
-    pvr_scene_next_pass();
+    pvr_list_continue();
 
     pvr_list_begin(PVR_LIST_OP_POLY);
     pvr_prim(&op_hdr, sizeof(op_hdr));
@@ -121,7 +121,7 @@ static void scene_sort(void) {
 
     sort_layers(0, BAND_ROW * 32);
 
-    pvr_scene_next_pass();
+    pvr_list_continue();
 
     sort_layers(BAND_ROW * 32, SCREEN_H);
 
@@ -168,7 +168,7 @@ static uint16_t rgb565(uint32_t argb) {
 /* Check the array of the last render against what's asked for. Returns the
    number of wrong entries. */
 static int array_check(bool (*skipped)(int, int),
-                       const bool want[PASSES][2], int *entries) {
+                       const bool want[GROUPS][2], int *entries) {
     const volatile uint32_t *e;
     uint32_t word, expect;
     int x, y, p, bad = 0, n = 0, last = 0;
@@ -183,7 +183,7 @@ static int array_check(bool (*skipped)(int, int),
             if(skipped && skipped(x, y))
                 continue;
 
-            for(p = 0; p < PASSES; p++) {
+            for(p = 0; p < GROUPS; p++) {
                 presort = want[p][x * tile_px >= SCREEN_W / 2];
                 expect = ((uint32_t)y << 8) | ((uint32_t)x << 2) |
                          (p ? RA_ZKEEP : RA_NO_WRITEOUT) |
@@ -195,7 +195,7 @@ static int array_check(bool (*skipped)(int, int),
 
                 if((word & ~RA_LAST) != expect) {
                     if(bad++ < 3)
-                        printf("  tile %d,%d pass %d: %08lx, wanted %08lx\n",
+                        printf("  tile %d,%d group %d: %08lx, wanted %08lx\n",
                                x, y, p, (unsigned long)word,
                                (unsigned long)expect);
                 }
@@ -222,7 +222,7 @@ static bool t1_skipped(int tx, int ty) {
 }
 
 static bool t1(void) {
-    static const bool none[PASSES][2] = { { true, false }, { true, false } };
+    static const bool none[GROUPS][2] = { { true, false }, { true, false } };
     static const uint32_t under[2] = { 0xff00ff00, 0xffffff00 };
     static const uint32_t over[2] = { 0xffff00ff, 0xff00ffff };
     int tx, ty, i, kept = 0, changed = 0, bad, entries, timeouts = 0;
@@ -240,7 +240,7 @@ static bool t1(void) {
     if(!settle())
         timeouts++;
 
-    /* Both passes must show everywhere before anything is skipped */
+    /* Both groups must show everywhere before anything is skipped */
     for(tx = 0; tx < tile_cols; tx++) {
         for(ty = 0; ty < tile_rows; ty++) {
             cx = tx * tile_px + tile_px / 2;
@@ -254,7 +254,7 @@ static bool t1(void) {
         }
     }
 
-    printf("RESULT T1 before skipping: %d tiles without both passes\n",
+    printf("RESULT T1 before skipping: %d tiles without both groups\n",
            bad_new);
 
     bad_new = 0;
@@ -299,7 +299,7 @@ static bool t1(void) {
     }
 
     bad = array_check(t1_skipped, none, &entries);
-    expect = (tile_cols * tile_rows - tiles) * PASSES;
+    expect = (tile_cols * tile_rows - tiles) * GROUPS;
 
     ok = !timeouts && !bad_kept && !bad_new && !bad && entries == expect;
 
@@ -319,14 +319,14 @@ static bool t1(void) {
 
 static const struct {
     const char *name;
-    bool want[PASSES][2];   /* Presort of [pass][left, right] */
+    bool want[GROUPS][2];   /* Presort of [group][left, right] */
 } t2_cases[T2_CASES] = {
     { "all autosort",              { { false, false }, { false, false } } },
     { "all presort",               { { true,  true  }, { true,  true  } } },
     { "rect left",                 { { true,  false }, { true,  false } } },
-    { "rect left, pass 0 auto",    { { false, false }, { true,  false } } },
-    { "rect left, pass 1 pre",     { { true,  false }, { true,  true  } } },
-    { "pass 0 auto, rect right",   { { false, true  }, { true,  true  } } },
+    { "rect left, group 0 auto",    { { false, false }, { true,  false } } },
+    { "rect left, group 1 pre",     { { true,  false }, { true,  true  } } },
+    { "group 0 auto, rect right",   { { false, true  }, { true,  true  } } },
 };
 
 static void t2_apply(int c) {
@@ -344,15 +344,15 @@ static void t2_apply(int c) {
             pvr_set_rect_presort(0, 0, SCREEN_W / 2, SCREEN_H, true);
 
             if(c == 3)
-                pvr_set_pass_presort(0, false);
+                pvr_set_group_presort(0, false);
             else if(c == 4)
-                pvr_set_pass_presort(1, true);
+                pvr_set_group_presort(1, true);
 
             break;
         case 5:
-            /* The rectangle comes last, so it wins over the pass */
+            /* The rectangle comes last, so it wins over the group */
             pvr_set_presort_mode(true);
-            pvr_set_pass_presort(0, false);
+            pvr_set_group_presort(0, false);
             pvr_set_rect_presort(SCREEN_W / 2, 0, SCREEN_W / 2, SCREEN_H,
                                  true);
             break;
@@ -524,7 +524,7 @@ int main(int argc, char *argv[]) {
         .vertex_buf_size = 512 * 1024,
         .fsaa_enabled = USE_FSAA,
         .opb_overflow_count = 3,
-        .pass_count = PASSES,
+        .list_group_count = GROUPS,
     };
     pvr_poly_cxt_t cxt;
     bool ok;
@@ -549,7 +549,7 @@ int main(int argc, char *argv[]) {
     cxt.depth.write = PVR_DEPTHWRITE_DISABLE;
     pvr_poly_compile(&tr_hdr, &cxt);
 
-    printf("RESULT region_multipass: FSAA %d, grid %dx%d, video %dx%d pm %d\n",
+    printf("RESULT region_listcont: FSAA %d, grid %dx%d, video %dx%d pm %d\n",
            USE_FSAA, tile_cols, tile_rows, vid_mode->width, vid_mode->height,
            vid_mode->pm);
 

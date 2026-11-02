@@ -71,17 +71,18 @@ __BEGIN_DECLS
     An array is rewritten only when it doesn't match the per-tile state, so
     a program may set its whole layout every frame: if the result is the
     same as before, nothing is written. A rewrite costs one uncached write
-    per word, 6 words per tile and pass (about 7 KB at 640x480 in one pass,
+    per word, 6 words per tile and group (about 7 KB at 640x480 in one group,
     twice that with FSAA).
 
-    \par Multipass scenes
-    With pvr_init_params_t::pass_count above 1, a tile has one entry per
-    pass. A skipped tile is left out of every pass. Each pass of each tile
-    has its own sort mode: pvr_set_tile_presort() and pvr_set_rect_presort()
-    set a tile in every pass, pvr_set_pass_presort() sets every tile of one
-    pass, and pvr_set_presort_mode() sets everything. The last call wins, so
-    to presort one pass everywhere and choose per tile in the others, set
-    the tiles first and the pass after them.
+    \par List groups
+    With pvr_init_params_t::list_group_count above 1, a tile has one entry
+    per list group. A skipped tile is left out of every group. Each group of
+    each tile has its own sort mode: pvr_set_tile_presort() and
+    pvr_set_rect_presort() set a tile in every group,
+    pvr_set_group_presort() sets every tile of one group, and
+    pvr_set_presort_mode() sets everything. The last call wins, so to
+    presort one group everywhere and choose per tile in the others, set the
+    tiles first and the group after them.
 
     \par Render to texture
     Scenes begun with pvr_scene_begin_txr() or pvr_scene_begin_rtt() use the
@@ -108,7 +109,7 @@ __BEGIN_DECLS
       rendered but not written out, and that tile keeps its pixels.
     - The order of the entries doesn't matter: row order, reversed and
       shuffled arrays render the same picture. KOS keeps its column order.
-    - Rewriting the array in one pass costs about 0.9 microseconds per
+    - Rewriting the array in one group costs about 0.9 microseconds per
       tile: about 0.26 ms at 640x480, 0.5 ms with FSAA.
 
     @{
@@ -126,7 +127,7 @@ void pvr_get_tile_grid(int *tw, int *th);
 
 /** \brief   Set the translucent sort mode of one tile.
 
-    In a multipass scene this sets the tile in every pass.
+    In a scene with several list groups this sets the tile in every group.
 
     \param  tx              Tile column (see \ref pvr_region for FSAA).
     \param  ty              Tile row.
@@ -143,8 +144,8 @@ int pvr_set_tile_presort(int tx, int ty, bool presort);
 
 /** \brief   Set the translucent sort mode of a rectangle of the screen.
 
-    Sets the sort mode of every tile the rectangle touches, in every pass of
-    a multipass scene. The rectangle is clipped to the screen.
+    Sets the sort mode of every tile the rectangle touches, in every group of
+    a scene with several list groups. The rectangle is clipped to the screen.
 
     \param  x               Left edge, in screen pixels.
     \param  y               Top edge, in screen pixels.
