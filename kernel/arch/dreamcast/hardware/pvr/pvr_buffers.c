@@ -31,15 +31,15 @@
 
 #define LIST_ENABLED(i) (pvr_state.lists_enabled & BIT(i))
 
-uint32_t pvr_ra_pass_flags(int p, int pass_count, bool presort) {
+uint32_t pvr_ra_group_flags(int p, int group_count, bool presort) {
     uint32_t flags = presort ? PVR_RA_PRESORT : 0;
 
-    /* Every pass after the first keeps the depth and colour of the tile, and
-       every pass before the last keeps the tile on chip. */
+    /* Every group after the first keeps the depth and colour of the tile, and
+       every group before the last keeps the tile on chip. */
     if(p > 0)
         flags |= PVR_RA_ZKEEP;
 
-    if(p < pass_count - 1)
+    if(p < group_count - 1)
         flags |= PVR_RA_NO_WRITEOUT;
 
     return flags;
@@ -47,10 +47,10 @@ uint32_t pvr_ra_pass_flags(int p, int pass_count, bool presort) {
 
 size_t pvr_ra_write(uint32_t tile_matrix, int tw, int th,
                     const int bin_size[PVR_OPB_COUNT],
-                    const pvr_ra_pass_t *passes, int pass_count,
+                    const pvr_ra_group_t *groups, int group_count,
                     const volatile uint64_t *skipped) {
     uint32_t *vr, *first;   /* Note: We're working in 4-byte pointer maths here */
-    const pvr_ra_pass_t *pass;
+    const pvr_ra_group_t *group;
     uint32_t flags;
     int x, y, p, i, tn;
 
@@ -78,14 +78,14 @@ size_t pvr_ra_write(uint32_t tile_matrix, int tw, int th,
 
     /*
         This sets up the addresses for each list, for each tile, for each
-        pass. If a list isn't enabled, then we set the address to 0x80000000
+        group. If a list isn't enabled, then we set the address to 0x80000000
         which tells the PVR to ignore it.
 
         Memory for each frame is arranged sort-of like this:
 
         [vertex_buffer | object pointer buffers | tilematrix header | tile matrix]
 
-        The entries of a tile's passes follow each other, in pass order.
+        The entries of a tile's groups follow each other, in group order.
     */
     for(x = 0; x < tw; x++) {
         for(y = 0; y < th; y++) {
@@ -94,11 +94,11 @@ size_t pvr_ra_write(uint32_t tile_matrix, int tw, int th,
 
             tn = (tw * y) + x;
 
-            for(p = 0; p < pass_count; p++) {
-                pass = passes + p;
-                flags = pass->flags & PVR_RA_FLAGS_MASK;
+            for(p = 0; p < group_count; p++) {
+                group = groups + p;
+                flags = group->flags & PVR_RA_FLAGS_MASK;
 
-                if(pass->presort && ((pass->presort[y] >> x) & 1))
+                if(group->presort && ((group->presort[y] >> x) & 1))
                     flags |= PVR_RA_PRESORT;
 
                 /* Control word */
@@ -107,10 +107,10 @@ size_t pvr_ra_write(uint32_t tile_matrix, int tw, int th,
                 /* Opaque poly, opaque volume mod, translucent poly,
                    translucent volume mod and punch-thru poly buffers */
                 for(i = 0; i < PVR_OPB_COUNT; i++) {
-                    if(pass->opb[i] & PVR_RA_LIST_EMPTY)
+                    if(group->opb[i] & PVR_RA_LIST_EMPTY)
                         vr[1 + i] = PVR_RA_LIST_EMPTY;
                     else
-                        vr[1 + i] = pass->opb[i] + (bin_size[i] * tn);
+                        vr[1 + i] = group->opb[i] + (bin_size[i] * tn);
                 }
 
                 vr += PVR_RA_ENTRY_WORDS;
@@ -137,12 +137,12 @@ static inline uint64_t pvr_tile_cols(int x0, int x1) {
 
 /* (Re)build the region array of TA buffer which from the per-tile tables.
 
-   If skip is true, tiles marked in tile_skipped are left out in every pass,
+   If skip is true, tiles marked in tile_skipped are left out in every group,
    so the PVR neither renders them nor writes them to the frame buffer. */
 static void pvr_build_tile_matrix(int which, bool skip) {
     volatile pvr_ta_buffers_t *buf;
     struct pvr_cache *c;
-    pvr_ra_pass_t passes[PVR_MAX_PASSES];
+    pvr_ra_group_t groups[PVR_MAX_LIST_GROUPS];
     int bin_size[PVR_OPB_COUNT];
     size_t size;
     int p, i, y;
@@ -152,37 +152,37 @@ static void pvr_build_tile_matrix(int which, bool skip) {
     for(i = 0; i < PVR_OPB_COUNT; i++)
         bin_size[i] = pvr_state.opb_size[i];
 
-    /* Each pass has its own first object pointer blocks, one pass after the
+    /* Each group has its own first object pointer blocks, one group after the
        other in the OPB area. */
-    for(p = 0; p < pvr_state.pass_count; p++) {
-        passes[p].flags = pvr_ra_pass_flags(p, pvr_state.pass_count, false);
-        passes[p].presort = pvr_state.tile_presort[p];
+    for(p = 0; p < pvr_state.group_count; p++) {
+        groups[p].flags = pvr_ra_group_flags(p, pvr_state.group_count, false);
+        groups[p].presort = pvr_state.tile_presort[p];
 
         for(i = 0; i < PVR_OPB_COUNT; i++)
-            passes[p].opb[i] = LIST_ENABLED(i) ?
+            groups[p].opb[i] = LIST_ENABLED(i) ?
                 buf->opb_addresses[i] + buf->opb_size * p : PVR_RA_LIST_EMPTY;
     }
 
-    /* A cache attached to a list slot supplies that list in the first pass,
+    /* A cache attached to a list slot supplies that list in the first group,
        from the copy that belongs to this TA buffer. */
     for(i = 0; i < PVR_OPB_COUNT; i++) {
         c = pvr_state.slot_cache[i];
 
         if(c) {
-            passes[0].opb[i] = c->base[which] + c->opb_addresses[i];
+            groups[0].opb[i] = c->base[which] + c->opb_addresses[i];
             bin_size[i] = c->opb_block[i];
         }
     }
 
     size = pvr_ra_write(buf->tile_matrix, pvr_state.tw, pvr_state.th, bin_size,
-                        passes, pvr_state.pass_count,
+                        groups, pvr_state.group_count,
                         skip ? pvr_state.tile_skipped : NULL);
 
     buf->tile_matrix_empty = (size == PVR_RA_SIZE(0, 0, 0));
 
     /* Remember what this array was built from */
     for(y = 0; y < pvr_state.th; y++) {
-        for(p = 0; p < pvr_state.pass_count; p++)
+        for(p = 0; p < pvr_state.group_count; p++)
             buf->tile_matrix_presort[p][y] = pvr_state.tile_presort[p][y];
 
         buf->tile_matrix_skipped[y] = pvr_state.tile_skipped[y];
@@ -200,7 +200,7 @@ static bool pvr_tile_matrix_current(int which, bool skip) {
         return false;
 
     for(y = 0; y < pvr_state.th; y++) {
-        for(p = 0; p < pvr_state.pass_count; p++)
+        for(p = 0; p < pvr_state.group_count; p++)
             if(buf->tile_matrix_presort[p][y] != pvr_state.tile_presort[p][y])
                 return false;
 
@@ -215,9 +215,9 @@ static bool pvr_tile_matrix_current(int which, bool skip) {
 void pvr_init_tile_matrices(bool presort) {
     int i, p;
 
-    /* Every tile rendered, every tile of every pass in the same sort mode */
+    /* Every tile rendered, every tile of every group in the same sort mode */
     for(i = 0; i < PVR_TILE_MAX; i++) {
-        for(p = 0; p < PVR_MAX_PASSES; p++)
+        for(p = 0; p < PVR_MAX_LIST_GROUPS; p++)
             pvr_state.tile_presort[p][i] = presort ? ~0ULL : 0;
 
         pvr_state.tile_skipped[i] = 0;
@@ -268,12 +268,12 @@ static void pvr_tile_table_set(volatile uint64_t *table, int tx0, int ty0,
     }
 }
 
-/* Set the sort mode of a rectangle of tiles in every pass. */
+/* Set the sort mode of a rectangle of tiles in every group. */
 static void pvr_tile_presort_set(int tx0, int ty0, int tx1, int ty1,
                                  bool presort) {
     int p;
 
-    for(p = 0; p < pvr_state.pass_count; p++)
+    for(p = 0; p < pvr_state.group_count; p++)
         pvr_tile_table_set(pvr_state.tile_presort[p], tx0, ty0, tx1, ty1,
                            presort);
 }
@@ -364,7 +364,7 @@ void pvr_get_tile_grid(int *tw, int *th) {
 }
 
 /* As before per-tile control existed, a change to the sort mode of the whole
-   screen or of a pass also applies to the scene being registered (if any),
+   screen or of a group also applies to the scene being registered (if any),
    so rewrite the array of the TA buffer being filled right away. The other
    one follows at its next scene. */
 static void pvr_apply_presort(void) {
@@ -388,11 +388,11 @@ void pvr_set_presort_mode(bool presort) {
     pvr_apply_presort();
 }
 
-int pvr_set_pass_presort(int pass, bool presort) {
-    if(!pvr_state.valid || pass < 0 || pass >= pvr_state.pass_count)
+int pvr_set_group_presort(int group, bool presort) {
+    if(!pvr_state.valid || group < 0 || group >= pvr_state.group_count)
         return -1;
 
-    pvr_tile_table_set(pvr_state.tile_presort[pass], 0, 0, pvr_state.tw - 1,
+    pvr_tile_table_set(pvr_state.tile_presort[group], 0, 0, pvr_state.tw - 1,
                        pvr_state.th - 1, presort);
     pvr_apply_presort();
 
@@ -531,10 +531,10 @@ int pvr_allocate_buffers(const pvr_init_params_t *params) {
         buf->opb = outaddr;
         buf->opb_size = opb_total_size;
 
-        /* One set of first OPBs per render pass, then extra space for
+        /* One set of first OPBs per list group, then extra space for
            overflow (when one OPB isn't big enough). */
         buf->opb_overflow_count = params->opb_overflow_count;
-        outaddr += opb_total_size * (pvr_state.pass_count + buf->opb_overflow_count);
+        outaddr += opb_total_size * (pvr_state.group_count + buf->opb_overflow_count);
 
         /* Set up the opb pointers to each section */
         opb_size_accum = 0;
@@ -553,7 +553,7 @@ int pvr_allocate_buffers(const pvr_init_params_t *params) {
 
         /* Tile Matrix */
         buf->tile_matrix = outaddr;
-        buf->tile_matrix_size = PVR_RA_SIZE(pvr_state.tw, pvr_state.th, pvr_state.pass_count);
+        buf->tile_matrix_size = PVR_RA_SIZE(pvr_state.tw, pvr_state.th, pvr_state.group_count);
         outaddr += buf->tile_matrix_size;
 
         /* N-byte align */

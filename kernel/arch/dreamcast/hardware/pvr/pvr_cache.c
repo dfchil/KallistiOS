@@ -94,21 +94,21 @@ static void cache_clear(struct pvr_cache *c) {
     c->entries = 0;
 }
 
-/* Write the region array of copy h, for whole-frame renders: one pass over
+/* Write the region array of copy h, for whole-frame renders: one group over
    every tile. */
 static void cache_write_region(struct pvr_cache *c, int h) {
-    pvr_ra_pass_t pass = { .flags = pvr_ra_pass_flags(0, 1, c->presort) };
+    pvr_ra_group_t group = { .flags = pvr_ra_group_flags(0, 1, c->presort) };
     int bin_size[PVR_OPB_COUNT];
     int l;
 
     for(l = 0; l < PVR_OPB_COUNT; l++) {
         bin_size[l] = c->opb_block[l];
-        pass.opb[l] = (c->lists & BIT(l)) ? first_block(c, h, l, 0) :
+        group.opb[l] = (c->lists & BIT(l)) ? first_block(c, h, l, 0) :
                                             PVR_RA_LIST_EMPTY;
     }
 
     pvr_ra_write(c->base[h] + c->region, pvr_state.tw, pvr_state.th, bin_size,
-                 &pass, 1, NULL);
+                 &group, 1, NULL);
 }
 
 /* Attach c to list slot l of both TA buffers' region arrays, or detach
@@ -565,8 +565,8 @@ int pvr_cache_attach(pvr_cache_t *c, int target) {
     if(!pvr_state.valid)
         return -1;
 
-    if(target >= PVR_CACHE_PASS(0)) {
-        dbglog(DBG_ERROR, "pvr_cache_attach: cached passes aren't "
+    if(target >= PVR_CACHE_GROUP(0)) {
+        dbglog(DBG_ERROR, "pvr_cache_attach: cached groups aren't "
                           "supported yet\n");
         return -1;
     }

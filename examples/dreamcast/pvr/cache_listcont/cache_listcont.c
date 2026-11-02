@@ -1,21 +1,21 @@
 /* KallistiOS ##version##
 
-   examples/dreamcast/pvr/cache_multipass/cache_multipass.c
+   examples/dreamcast/pvr/cache_listcont/cache_listcont.c
    Copyright (C) 2026 Daniel Fairchild
 
-   Hardware test for cached object lists together with multipass rendering,
+   Hardware test for cached object lists together with list continuation,
    skipped tiles and the background plane. Not an example: it renders test
    scenes, reads the frame buffer back with the CPU, and checks the region
    array KOS wrote.
 
-   T1  A cache in the punch-through slot of a two-pass scene: is it drawn in
-       pass 0 alone, under pass 1?
+   T1  A cache in the punch-through slot of a two-group scene: is it drawn in
+       group 0 alone, under group 1?
    T2  Does the attachment survive the region array being rebuilt for skipped
        tiles and sort modes, leave skipped tiles alone, and end on detach?
-   T3  A frame from a cache alone in a two-pass setup: does it show the
+   T3  A frame from a cache alone in a two-group setup: does it show the
        gradient and the textured background as a TA frame does, and do TA
        frames work afterwards?
-   T4  Does pvr_scene_finish_cached() refuse a scene past pass 0?
+   T4  Does pvr_scene_finish_cached() refuse a scene past group 0?
 
    Build option: USE_FSAA (0 or 1).
 
@@ -36,7 +36,7 @@
 
 #define SCREEN_W    640
 #define SCREEN_H    480
-#define PASSES      2
+#define GROUPS      2
 
 #define RED         0xffff0000
 #define GREEN       0xff00ff00
@@ -86,9 +86,9 @@ static void cache_send(void *data) {
     pvr_list_finish();
 }
 
-/* Pass 0 is red, with the cache on top of it. Pass 1 is blue, over the
+/* Group 0 is red, with the cache on top of it. Group 1 is blue, over the
    bottom half of each tile row, in front of both. */
-static void scene_passes(void) {
+static void scene_groups(void) {
     int y;
 
     pvr_wait_ready();
@@ -99,7 +99,7 @@ static void scene_passes(void) {
     quad(0, 0, SCREEN_W, SCREEN_H, 1.0f, RED);
     pvr_list_finish();
 
-    pvr_scene_next_pass();
+    pvr_list_continue();
 
     pvr_list_begin(PVR_LIST_OP_POLY);
     pvr_prim(&op_hdr, sizeof(op_hdr));
@@ -151,7 +151,7 @@ static bool checker(int tx, int ty) {
     return ((tx ^ ty) & 1) != 0;
 }
 
-/* Check the punch-through pointers of the array of the last render: pass 0
+/* Check the punch-through pointers of the array of the last render: group 0
    holds the cache if attached, every other entry is empty. Returns the
    number of wrong entries. */
 static int slot_check(bool (*skipped)(int, int), bool attached) {
@@ -169,7 +169,7 @@ static int slot_check(bool (*skipped)(int, int), bool attached) {
             if(skipped && skipped(x, y))
                 continue;
 
-            for(p = 0; p < PASSES; p++) {
+            for(p = 0; p < GROUPS; p++) {
                 want = RA_LIST_EMPTY;
 
                 if(attached && !p)
@@ -188,8 +188,8 @@ static int slot_check(bool (*skipped)(int, int), bool attached) {
     return bad;
 }
 
-/* Count tiles that don't show the two-pass picture. With cached, the left
-   half has the cache under pass 1. Skipped tiles aren't looked at. */
+/* Count tiles that don't show the two-group picture. With cached, the left
+   half has the cache under group 1. Skipped tiles aren't looked at. */
 static int picture_check(bool (*skipped)(int, int), bool cached) {
     int tx, ty, x, y, bad = 0;
     uint16_t top;
@@ -214,7 +214,7 @@ static int picture_check(bool (*skipped)(int, int), bool cached) {
 
 static void frames(int count) {
     while(count--)
-        scene_passes();
+        scene_groups();
 
     settle();
 }
@@ -257,7 +257,7 @@ static bool t2(void) {
     pvr_set_rect_presort(0, 0, SCREEN_W / 2, SCREEN_H, true);
 
     for(i = 0; i < 8; i++) {
-        scene_passes();
+        scene_groups();
         settle();
 
         for(tx = 0; tx < tile_cols; tx++)
@@ -286,7 +286,7 @@ static bool t2(void) {
     if(pic || arr)
         ok = false;
 
-    /* The new picture has the cache gone from pass 0 */
+    /* The new picture has the cache gone from group 0 */
     pvr_cache_attach(NULL, PVR_CACHE_SLOT(PVR_LIST_PT_POLY));
     frames(4);
 
@@ -390,10 +390,10 @@ static bool t3(pvr_ptr_t txr) {
     pvr_set_bg_texture(NULL, 0, 0, 0, PVR_FILTER_NEAREST);
     pvr_set_bg_color(0.0f, 0.0f, 0.0f);
 
-    /* And TA frames with both passes afterwards */
+    /* And TA frames with both groups afterwards */
     frames(4);
     pic = picture_check(NULL, false);
-    printf("RESULT T3 two-pass TA frames afterwards: %d tiles wrong\n", pic);
+    printf("RESULT T3 two-group TA frames afterwards: %d tiles wrong\n", pic);
 
     if(pic)
         ok = false;
@@ -408,12 +408,12 @@ static bool t4(void) {
 
     pvr_wait_ready();
     pvr_scene_begin();
-    pvr_scene_next_pass();
+    pvr_list_continue();
     rc = pvr_scene_finish_cached(cache);
     pvr_scene_finish();
     settle();
 
-    printf("RESULT T4 %s: pvr_scene_finish_cached() in pass 1 returned %d\n",
+    printf("RESULT T4 %s: pvr_scene_finish_cached() in group 1 returned %d\n",
            rc < 0 ? "PASS" : "FAIL", rc);
 
     return rc < 0;
@@ -426,7 +426,7 @@ int main(int argc, char *argv[]) {
         .vertex_buf_size = 512 * 1024,
         .fsaa_enabled = USE_FSAA,
         .opb_overflow_count = 3,
-        .pass_count = PASSES,
+        .list_group_count = GROUPS,
         .cached_list_size = 256 * 1024,
     };
     pvr_cache_params_t cache_params = {
@@ -468,7 +468,7 @@ int main(int argc, char *argv[]) {
     pvr_txr_load(pixels, txr, TXR_SIZE * TXR_SIZE * 2);
     free(pixels);
 
-    printf("RESULT cache_multipass: FSAA %d, grid %dx%d, video %dx%d pm %d\n",
+    printf("RESULT cache_listcont: FSAA %d, grid %dx%d, video %dx%d pm %d\n",
            USE_FSAA, tile_cols, tile_rows, vid_mode->width, vid_mode->height,
            vid_mode->pm);
 

@@ -1,10 +1,10 @@
 # KallistiOS ##version##
 #
-# examples/dreamcast/pvr/multipass_sortmix/Makefile
+# examples/dreamcast/pvr/listcont_sortmix/Makefile
 #
 
-TARGET = multipass_sortmix.elf
-OBJS = multipass_sortmix.o
+TARGET = listcont_sortmix.elf
+OBJS = listcont_sortmix.o
 
 all: rm-elf $(TARGET)
 

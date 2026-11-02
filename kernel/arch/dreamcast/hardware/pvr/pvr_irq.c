@@ -100,13 +100,14 @@ bool pvr_start_cached_frame(void) {
     return false;
 }
 
-/* A list-done interrupt arrived. In a multipass scene, each enabled list
-   finishes once per pass; the list counts as transferred after the last pass,
-   so that the render starts only once the whole scene is in. Counting (rather
-   than resetting a mask at each pass) also keeps a late interrupt from an
-   earlier pass from being mistaken for one of the next pass. */
+/* A list-done interrupt arrived. With several list groups, each enabled
+   list finishes once per group; the list counts as transferred after the
+   last group, so that the render starts only once the whole scene is in.
+   Counting (rather than resetting a mask at each group) also keeps a late
+   interrupt from an earlier group from being mistaken for one of the next
+   group. */
 static inline void pvr_list_done(pvr_list_t list) {
-    if(++pvr_state.lists_done[list] >= pvr_state.pass_count)
+    if(++pvr_state.lists_done[list] >= pvr_state.group_count)
         pvr_state.lists_transferred |= BIT(list);
 }
 

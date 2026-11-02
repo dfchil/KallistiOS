@@ -169,15 +169,15 @@ typedef struct pvr_cache_info {
 */
 #define PVR_CACHE_SLOT(list)    ((int)(list))
 
-/** \brief   Attach target: a whole render pass (reserved).
+/** \brief   Attach target: a whole list group (reserved).
     \ingroup pvr_cache
 
-    Reserved for multipass rendering, where the cache will supply every list
-    of one pass. pvr_cache_attach() refuses it for now.
+    Reserved for a cache that supplies every list of one list group (see
+    \ref pvr_list_cont). pvr_cache_attach() refuses it for now.
 
-    \param  pass            The pass number.
+    \param  group           The group number.
 */
-#define PVR_CACHE_PASS(pass)    (0x100 + (pass))
+#define PVR_CACHE_GROUP(group)  (0x100 + (group))
 
 /** \brief   Reserved VRAM still free for caches.
     \ingroup pvr_cache
@@ -238,13 +238,14 @@ int pvr_cache_build(pvr_cache_t *cache, void (*send)(void *data), void *data);
     It saves the CPU and TA time of the cached polygons, but the ISP renders
     punch-through polygons several times slower than opaque ones.
 
-    In a multipass scene the cache supplies the list in the first pass. A
-    tile skipped with pvr_set_tile_enabled() doesn't draw the cache either.
+    With several list groups, the cache supplies the list in the first
+    group. A tile skipped with pvr_set_tile_enabled() doesn't draw the cache
+    either.
 
     \param  cache           The cache to attach, or NULL to detach whatever
                             is attached to \p target.
-    \param  target          PVR_CACHE_SLOT(list). PVR_CACHE_PASS(pass) is
-                            reserved for multipass rendering.
+    \param  target          PVR_CACHE_SLOT(list). PVR_CACHE_GROUP(group) is
+                            reserved.
     \retval 0               On success.
     \retval -1              If the target is invalid, used by the TA, or not
                             in the cache.
@@ -258,14 +259,15 @@ int pvr_cache_attach(pvr_cache_t *cache, int target);
     pvr_scene_begin_rtt() and without submitting any list. The frame is
     rendered from the cache's own region array with no TA work; it goes
     through the usual pipeline (render start, page flip, statistics). That
-    array has one pass over every tile, whatever pvr_init_params_t::pass_count
-    says, and it ignores skipped tiles (see \ref pvr_region).
+    array has one list group over every tile, whatever
+    pvr_init_params_t::list_group_count says, and it ignores skipped tiles
+    (see \ref pvr_region).
 
     \param  cache           The cache to render.
     \retval 0               On success.
     \retval -1              If \p cache is NULL, vertex DMA is enabled, or
                             lists were submitted in this scene, which includes
-                            moving on with pvr_scene_next_pass().
+                            moving on with pvr_list_continue().
 */
 int pvr_scene_finish_cached(pvr_cache_t *cache);
 
