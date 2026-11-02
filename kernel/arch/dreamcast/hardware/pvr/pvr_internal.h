@@ -127,7 +127,7 @@ typedef struct {
     uint32_t  opb_overflow_count;             /* Extra OPB space after opb_size for TA overflow */
     bool      tile_matrix_skips;              /* Built with skipped tiles left out */
     bool      tile_matrix_empty;              /* Every tile left out: don't render */
-    uint64_t  tile_matrix_presort[PVR_MAX_PASSES][PVR_TILE_MAX];  /* tile_presort it was built from */
+    uint64_t  tile_matrix_presort[PVR_MAX_LIST_GROUPS][PVR_TILE_MAX];  /* tile_presort it was built from */
     uint64_t  tile_matrix_skipped[PVR_TILE_MAX];  /* tile_skipped it was built from */
 } pvr_ta_buffers_t;
 
@@ -193,11 +193,11 @@ typedef struct {
     uint32_t  lists_closed;             // (1 << idx) for each list which the SH4 has lost interest in
     uint32_t  lists_transferred;        // (1 << idx) for each list which has completely transferred to the TA
     uint32_t  lists_dmaed;              // (1 << idx) for each list which has been DMA'd (DMA mode only)
-    uint8_t   lists_done[PVR_OPB_COUNT];// Done interrupts received for each list in this scene (one per pass)
+    uint8_t   lists_done[PVR_OPB_COUNT];// Done interrupts received for each list in this scene (one per group)
 
-    // Multipass state
-    int       pass_count;               // Render passes per scene (>= 1)
-    int       pass_cur;                 // Pass being submitted
+    // List continuation state
+    int       group_count;               // List groups per scene (>= 1)
+    int       group_cur;                 // Group being submitted
 
     semaphore_t         dma_lock;       // Locked if a DMA is in progress (vertex or texture)
     int     ta_checked_ready;           // >0 if the TA has been checked to be ready for the new scene
@@ -229,7 +229,7 @@ typedef struct {
     pvr_bg_vertex_t bg_vert[3];           // Vertices (only argb if !bg_custom)
 
     // Per-tile region array state: bit x of row y is tile (x, y).
-    uint64_t  tile_presort[PVR_MAX_PASSES][PVR_TILE_MAX]; // Tile presorts its TR list in this pass
+    uint64_t  tile_presort[PVR_MAX_LIST_GROUPS][PVR_TILE_MAX]; // Tile presorts its TR list in this group
     uint64_t  tile_skipped[PVR_TILE_MAX]; // Tile left out of the region array
     int       tiles_skipped;              // Number of bits set in tile_skipped
 
@@ -333,7 +333,7 @@ void pvr_init_tile_matrices(bool presort);
    list address with bit 31 set (PVR_RA_LIST_EMPTY) means an empty list.
 
    Tiles are written in column order (x outer, y inner), as KOS always has.
-   A tile gets one entry per pass, consecutive and in pass order, or none if
+   A tile gets one entry per group, consecutive and in group order, or none if
    it is skipped. */
 
 #define PVR_TILE_MATRIX_HEADER_SIZE 0x48
@@ -353,9 +353,9 @@ void pvr_init_tile_matrices(bool presort);
 
 #define PVR_RA_LIST_EMPTY   0x80000000
 
-/* One pass of the region array, i.e. one entry per tile that isn't skipped. */
-typedef struct pvr_ra_pass {
-    /* Control word flags for this pass's entries: any of PVR_RA_ZKEEP,
+/* One group of the region array, i.e. one entry per tile that isn't skipped. */
+typedef struct pvr_ra_group {
+    /* Control word flags for this group's entries: any of PVR_RA_ZKEEP,
        PVR_RA_PRESORT and PVR_RA_NO_WRITEOUT. The writer adds the tile
        position, and PVR_RA_LAST on the final entry of the array. */
     uint32_t    flags;
@@ -368,30 +368,30 @@ typedef struct pvr_ra_pass {
     /* If not NULL, PVR_RA_PRESORT is also set on the entry of tile (x, y)
        when bit x of presort[y] is set. */
     const volatile uint64_t *presort;
-} pvr_ra_pass_t;
+} pvr_ra_group_t;
 
 /* Write a full region array at VRAM offset tile_matrix (the address that
    goes into PVR_ISP_TILEMAT_ADDR; the header goes before it): the dummy
-   entry, then pass_count entries per tile of a tw x th grid, entry p taking
-   its flags and list bases from passes[p]. bin_size[list] is the first-block
+   entry, then group_count entries per tile of a tw x th grid, entry p taking
+   its flags and list bases from groups[p]. bin_size[list] is the first-block
    size of each list in bytes. If skipped isn't NULL, tile (x, y) gets no
    entries when bit x of skipped[y] is set. Returns the size in bytes from
    tile_matrix to the end of the array, which is PVR_RA_SIZE(0, 0, 0) if
    only the dummy entry was written: such an array must not be rendered. */
 size_t pvr_ra_write(uint32_t tile_matrix, int tw, int th,
                     const int bin_size[PVR_OPB_COUNT],
-                    const pvr_ra_pass_t *passes, int pass_count,
+                    const pvr_ra_group_t *groups, int group_count,
                     const volatile uint64_t *skipped);
 
 /* Size in bytes from tile_matrix to the end of such an array with no tile
    skipped. */
-#define PVR_RA_SIZE(tw, th, pass_count) \
-    (4 * PVR_RA_ENTRY_WORDS * (1 + (tw) * (th) * (pass_count)))
+#define PVR_RA_SIZE(tw, th, group_count) \
+    (4 * PVR_RA_ENTRY_WORDS * (1 + (tw) * (th) * (group_count)))
 
-/* Control word flags of pass p in a pass_count-pass scene, presorted or not:
-   PVR_RA_ZKEEP on all passes but the first, PVR_RA_NO_WRITEOUT on all but
+/* Control word flags of group p of group_count, presorted or not:
+   PVR_RA_ZKEEP on all groups but the first, PVR_RA_NO_WRITEOUT on all but
    the last. */
-uint32_t pvr_ra_pass_flags(int p, int pass_count, bool presort);
+uint32_t pvr_ra_group_flags(int p, int group_count, bool presort);
 
 /* Rebuild the tile matrix of the TA buffer about to be filled, if it
    doesn't match the per-tile state */

@@ -1,12 +1,12 @@
 /* KallistiOS ##version##
 
-   examples/dreamcast/pvr/multipass_mirror/multipass_mirror.c
+   examples/dreamcast/pvr/listcont_mirror/listcont_mirror.c
 
-   A rear-view mirror drawn in a second render pass (pvr_init_params_t::
-   pass_count).
+   A rear-view mirror drawn in a second list group
+   (pvr_init_params_t::list_group_count).
 
-   Pass 0 draws the view ahead: road, posts, and translucent banners over
-   the road. Pass 1 draws the mirror. It starts with an opaque rectangle
+   Group 0 draws the view ahead: road, posts, and translucent banners over
+   the road. Group 1 draws the mirror. It starts with an opaque rectangle
    over the mirror area, with depth compare "always" and the farthest
    depth: that gives the mirror its backdrop and clears the depth there.
    Then it draws the scene seen from a camera looking back, with its own
@@ -14,12 +14,12 @@
    tiles, and the mirror's polygons use user clipping (PVR_USERCLIP_INSIDE)
    to stay inside it.
 
-   With one pass, the same polygons share one set of lists: the opaque
+   With one group, the same polygons share one set of lists: the opaque
    ones still work, since the opaque list is drawn in submission order,
    but the banners of the view ahead are drawn over the mirror, and the
    translucent polygons of both views are sorted together.
 
-   Controls: A switches between one and two passes (the mode also changes by
+   Controls: A switches between one and two groups (the mode also changes by
    itself every 5 seconds until A is pressed), Y toggles FSAA, Start exits.
    The mode and the PVR render time are shown on screen and printed on the
    serial console.
@@ -82,19 +82,19 @@ static void text_render_time(char *buf, size_t size) {
 
 static void compile_headers(void);
 
-/* (Re)initialize the PVR for the given number of passes and FSAA setting.
+/* (Re)initialize the PVR for the given number of groups and FSAA setting.
    Returns 1 if it did. */
-static int setup(int passes) {
-    static int cur_passes = -1, cur_fsaa = -1;
+static int setup(int groups) {
+    static int cur_groups = -1, cur_fsaa = -1;
     pvr_poly_cxt_t cxt;
 
-    if(passes == cur_passes && fsaa == cur_fsaa)
+    if(groups == cur_groups && fsaa == cur_fsaa)
         return 0;
 
-    if(cur_passes >= 0)
+    if(cur_groups >= 0)
         pvr_shutdown();
 
-    params.pass_count = passes;
+    params.list_group_count = groups;
     params.fsaa_enabled = fsaa;
     pvr_init(&params);
     pvr_set_bg_color(0.5f, 0.7f, 0.95f);
@@ -109,7 +109,7 @@ static int setup(int passes) {
     pvr_poly_compile(&hdr_txt, &cxt);
     compile_headers();
 
-    cur_passes = passes;
+    cur_groups = groups;
     cur_fsaa = fsaa;
 
     return 1;
@@ -414,19 +414,19 @@ static void mirror_tr(void) {
     scene_tr(drive_z - 60.0f, drive_z);
 }
 
-static void do_frame(int two_pass) {
+static void do_frame(int two_groups) {
     pvr_wait_ready();
     pvr_scene_begin();
 
-    if(two_pass) {
-        /* Pass 0: the view ahead */
+    if(two_groups) {
+        /* Group 0: the view ahead */
         pvr_list_begin(PVR_LIST_OP_POLY);
         ahead_op();
         pvr_list_begin(PVR_LIST_TR_POLY);
         ahead_tr();
 
-        /* Pass 1: the mirror, and the text */
-        pvr_scene_next_pass();
+        /* Group 1: the mirror, and the text */
+        pvr_list_continue();
         pvr_list_begin(PVR_LIST_OP_POLY);
         mirror_op();
         pvr_list_begin(PVR_LIST_TR_POLY);
@@ -450,14 +450,14 @@ static void do_frame(int two_pass) {
 
 int main(int argc, char *argv[]) {
     uint32_t pressed;
-    int two_pass = 1, autocycle = 1, frame = 0;
+    int two_groups = 1, autocycle = 1, frame = 0;
     uint64_t next_switch = timer_ms_gettime64() + 5000;
     char l1[64], l2[64];
 
     (void)argc;
     (void)argv;
 
-    printf("multipass_mirror: A = 1/2 passes, Y = FSAA, Start = exit\n");
+    printf("listcont_mirror: A = 1/2 groups, Y = FSAA, Start = exit\n");
 
     for(;;) {
         pressed = buttons_pressed();
@@ -466,7 +466,7 @@ int main(int argc, char *argv[]) {
             break;
 
         if(pressed & CONT_A) {
-            two_pass = !two_pass;
+            two_groups = !two_groups;
             autocycle = 0;
         }
 
@@ -474,25 +474,25 @@ int main(int argc, char *argv[]) {
             fsaa = !fsaa;
 
         if(autocycle && timer_ms_gettime64() >= next_switch) {
-            two_pass = !two_pass;
+            two_groups = !two_groups;
             next_switch = timer_ms_gettime64() + 5000;
         }
 
-        setup(two_pass ? 2 : 1);
+        setup(two_groups ? 2 : 1);
 
         if((frame++ % 30) == 0 || pressed) {
             snprintf(l1, sizeof(l1), "%s%s",
-                     two_pass ? "2 passes: mirror in pass 1" :
-                                "1 pass: banners over the mirror",
+                     two_groups ? "2 groups: mirror in group 1" :
+                                "1 group: banners over the mirror",
                      fsaa ? ", FSAA" : "");
             text_render_time(l2, sizeof(l2));
             text_set(l1, l2);
 
             if((frame % 60) == 1)
-                printf("multipass_mirror: %s; %s\n", l1, l2);
+                printf("listcont_mirror: %s; %s\n", l1, l2);
         }
 
-        do_frame(two_pass);
+        do_frame(two_groups);
         drive_z += 0.25f;
     }
 
