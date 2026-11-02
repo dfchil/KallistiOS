@@ -1,20 +1,21 @@
 /* KallistiOS ##version##
 
-   examples/dreamcast/pvr/multipass_sortmix/multipass_sortmix.c
+   examples/dreamcast/pvr/listcont_sortmix/listcont_sortmix.c
 
-   Presorted and autosorted translucency in one frame, with multipass
-   rendering (pvr_init_params_t::pass_count and pvr_set_pass_presort()).
+   Presorted and autosorted translucency in one frame, with list
+   continuation (pvr_init_params_t::list_group_count and
+   pvr_set_group_presort()).
 
-   Pass 0's translucent list holds layered 2D cards, like UI panels or
+   Group 0's translucent list holds layered 2D cards, like UI panels or
    decals: they must be drawn in the order they are sent, whatever their
    depth values (here, each card is sent farther than the one before, and
    the last one sent must end up on top). That needs presort.
 
-   Pass 1's translucent list holds a turning cloud of intersecting
+   Group 1's translucent list holds a turning cloud of intersecting
    translucent quads, which only per-pixel sorting draws right. That needs
    autosort.
 
-   The sort mode of each pass can be switched: presort/autosort is right;
+   The sort mode of each group can be switched: presort/autosort is right;
    presort everywhere breaks the cloud (each quad covers the ones sent
    before it); autosort everywhere breaks the card order (the first card
    sent, the nearest, ends up on top).
@@ -82,19 +83,19 @@ static void text_render_time(char *buf, size_t size) {
 
 static void compile_headers(void);
 
-/* (Re)initialize the PVR for the given number of passes and FSAA setting.
+/* (Re)initialize the PVR for the given number of groups and FSAA setting.
    Returns 1 if it did. */
-static int setup(int passes) {
-    static int cur_passes = -1, cur_fsaa = -1;
+static int setup(int groups) {
+    static int cur_groups = -1, cur_fsaa = -1;
     pvr_poly_cxt_t cxt;
 
-    if(passes == cur_passes && fsaa == cur_fsaa)
+    if(groups == cur_groups && fsaa == cur_fsaa)
         return 0;
 
-    if(cur_passes >= 0)
+    if(cur_groups >= 0)
         pvr_shutdown();
 
-    params.pass_count = passes;
+    params.list_group_count = groups;
     params.fsaa_enabled = fsaa;
     pvr_init(&params);
     pvr_set_bg_color(0.15f, 0.15f, 0.25f);
@@ -109,7 +110,7 @@ static int setup(int passes) {
     pvr_poly_compile(&hdr_txt, &cxt);
     compile_headers();
 
-    cur_passes = passes;
+    cur_groups = groups;
     cur_fsaa = fsaa;
 
     return 1;
@@ -309,14 +310,14 @@ static void do_frame(float t) {
     pvr_wait_ready();
     pvr_scene_begin();
 
-    /* Pass 0: floor, cards */
+    /* Group 0: floor, cards */
     pvr_list_begin(PVR_LIST_OP_POLY);
     floor_checker();
     pvr_list_begin(PVR_LIST_TR_POLY);
     cards();
 
-    /* Pass 1: cloud, text */
-    pvr_scene_next_pass();
+    /* Group 1: cloud, text */
+    pvr_list_continue();
     pvr_list_begin(PVR_LIST_TR_POLY);
     cloud(t);
     draw_text();
@@ -326,7 +327,7 @@ static void do_frame(float t) {
 
 /**** Main *********************************************************/
 
-/* Sort mode of pass 0 (cards) and pass 1 (cloud) */
+/* Sort mode of group 0 (cards) and group 1 (cloud) */
 static const struct {
     bool presort0, presort1;
     const char *name;
@@ -347,7 +348,7 @@ int main(int argc, char *argv[]) {
     (void)argc;
     (void)argv;
 
-    printf("multipass_sortmix: A = sort modes, Y = FSAA, Start = exit\n");
+    printf("listcont_sortmix: A = sort modes, Y = FSAA, Start = exit\n");
 
     cam.x = 0.0f; cam.y = 3.0f; cam.z = -5.0f;
     cam_pitch = 0.3f;
@@ -379,8 +380,8 @@ int main(int argc, char *argv[]) {
            changed. */
         if(applied != mode) {
             pvr_wait_ready();
-            pvr_set_pass_presort(0, modes[mode].presort0);
-            pvr_set_pass_presort(1, modes[mode].presort1);
+            pvr_set_group_presort(0, modes[mode].presort0);
+            pvr_set_group_presort(1, modes[mode].presort1);
             applied = mode;
         }
 
@@ -391,7 +392,7 @@ int main(int argc, char *argv[]) {
             text_set(l1, l2);
 
             if((frame % 60) == 1)
-                printf("multipass_sortmix: %s; %s\n", l1, l2);
+                printf("listcont_sortmix: %s; %s\n", l1, l2);
         }
 
         do_frame(t);
