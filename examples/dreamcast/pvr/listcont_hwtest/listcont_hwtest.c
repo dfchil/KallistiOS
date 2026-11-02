@@ -1,38 +1,38 @@
 /* KallistiOS ##version##
 
-   examples/dreamcast/pvr/multipass_hwtest/multipass_hwtest.c
+   examples/dreamcast/pvr/listcont_hwtest/listcont_hwtest.c
 
-   Hardware tests for multipass rendering (pvr_init_params_t::pass_count).
+   Hardware tests for list continuation (pvr_init_params_t::list_group_count).
 
    Runs a series of small scenes, reads the rendered pixels back from the
    frame buffer (and from a render-to-texture target) and prints on the
    serial console what the hardware did. Each result line starts with
    "HWTEST". At the end, a summary is shown on screen.
 
-   T1  Region array bit 28: two passes, red quad in pass 0 and green quad in
-       pass 1, both expected. Then bit 28 is set on the last pass too: if the
+   T1  Region array bit 28: two groups, red quad in group 0 and green quad in
+       group 1, both expected. Then bit 28 is set on the last group too: if the
        frame buffer keeps the magenta it was filled with, bit 28 means "don't
        write the tile out". Done for the frame buffer and for render to
        texture.
-   T2  Does TA_LIST_CONT need to wait for the done interrupts of the pass?
-       A heavy pass 0, rendered with and without the wait, compared with a
+   T2  Does TA_LIST_CONT need to wait for the done interrupts of the group?
+       A heavy group 0, rendered with and without the wait, compared with a
        reference checksum over many frames.
-   T3  Does opaque shading in a z-keep pass touch only that pass's pixels?
-       Pass 0: grey opaque floor, 50% red translucent quad. Pass 1: small
-       opaque quads in the same tiles. Also checks that pass 1 is depth
-       tested against pass 0's depth.
-   T4  Is moving TA_OL_BASE between passes needed? Pass 0: red opaque quad.
-       Pass 1: 50% white translucent quad. Without the move (and with every
-       pass's region entries on pass 0's blocks), the outcome tells what the
-       TA did with the second pass's lists.
-   T5  Modifier volumes across passes (cheap shadow): does a pass-0 volume
-       shadow pass-1 polygons, and does a pass-1 volume shadow pass-0 pixels?
+   T3  Does opaque shading in a z-keep group touch only that group's pixels?
+       Group 0: grey opaque floor, 50% red translucent quad. Group 1: small
+       opaque quads in the same tiles. Also checks that group 1 is depth
+       tested against group 0's depth.
+   T4  Is moving TA_OL_BASE between groups needed? Group 0: red opaque quad.
+       Group 1: 50% white translucent quad. Without the move (and with every
+       group's region entries on group 0's blocks), the outcome tells what the
+       TA did with the second group's lists.
+   T5  Modifier volumes across groups (cheap shadow): does a group-0 volume
+       shadow group-1 polygons, and does a group-1 volume shadow group-0 pixels?
 
-   Built twice: multipass_hwtest.elf without FSAA, multipass_hwtest_fsaa.elf
+   Built twice: listcont_hwtest.elf without FSAA, listcont_hwtest_fsaa.elf
    with FSAA.
 
-   This program uses pvr_mp_test_flags, a temporary hook of the multipass
-   implementation that isn't part of the KOS API.
+   This program uses pvr_lc_test_flags, a temporary hook of the list
+   continuation code that isn't part of the KOS API.
 */
 
 #include <stdio.h>
@@ -53,12 +53,12 @@
 #define HWTEST_FSAA 0
 #endif
 
-/* Test hooks of the multipass implementation (hardware/pvr/pvr_internal.h) */
-extern volatile uint32_t pvr_mp_test_flags;
-#define PVR_MP_TEST_NO_WAIT             (1 << 0)
-#define PVR_MP_TEST_NO_OL_BASE          (1 << 1)
-#define PVR_MP_TEST_LAST_NO_WRITEOUT    (1 << 2)
-#define PVR_MP_TEST_ALL_WRITEOUT        (1 << 3)
+/* Test hooks of the list continuation code (hardware/pvr/pvr_internal.h) */
+extern volatile uint32_t pvr_lc_test_flags;
+#define PVR_LC_TEST_NO_WAIT             (1 << 0)
+#define PVR_LC_TEST_NO_OL_BASE          (1 << 1)
+#define PVR_LC_TEST_LAST_NO_WRITEOUT    (1 << 2)
+#define PVR_LC_TEST_ALL_WRITEOUT        (1 << 3)
 
 #define W 640
 #define H 480
@@ -92,7 +92,7 @@ static void reset_errors(void) {
 
 /* Prints error interrupt counts; returns their total, OPB_OUTOFMEM left out:
    stock KOS raises it on every other frame when it switches TA buffers
-   (measured on hardware with a single pass and no overflow in use). */
+   (measured on hardware with a single group and no overflow in use). */
 static int print_errors(const char *tag) {
     int i, total = 0;
 
@@ -318,7 +318,7 @@ static void scene_t1(void) {
     quad(64, 160, 288, 320, 1.0f, 0xffff0000);
     pvr_list_finish();
 
-    pvr_scene_next_pass();
+    pvr_list_continue();
 
     pvr_list_begin(PVR_LIST_OP_POLY);
     pvr_prim(&hdr_op, sizeof(hdr_op));
@@ -327,7 +327,7 @@ static void scene_t1(void) {
 }
 
 static const probe_t t1_probes[3] = {
-    { "red/pass0", 176, 240 }, { "green/pass1", 464, 240 }, { "bg", 320, 240 }
+    { "red/group0", 176, 240 }, { "green/group1", 464, 240 }, { "bg", 320, 240 }
 };
 
 static const uint32_t t1_want[3] = {
@@ -360,7 +360,7 @@ static uint64_t t1_time(uint32_t flags) {
     uint64_t sum = 0;
     int i;
 
-    pvr_mp_test_flags = flags;
+    pvr_lc_test_flags = flags;
     render(scene_t1, 0);
     render(scene_t1, 0);
 
@@ -370,7 +370,7 @@ static uint64_t t1_time(uint32_t flags) {
         sum += st.rnd_last_time;
     }
 
-    pvr_mp_test_flags = 0;
+    pvr_lc_test_flags = 0;
 
     return sum / 32 / 1000;
 }
@@ -379,12 +379,12 @@ static void test1(void) {
     uint32_t addr;
     int i, r, a_ok = 1;
 
-    printf("HWTEST T1 ---- two passes, bit 28 (writeout control)\n");
+    printf("HWTEST T1 ---- two groups, bit 28 (writeout control)\n");
     pvr_set_bg_color(0.0f, 0.0f, 0.5f);
-    pvr_mp_test_flags = 0;
+    pvr_lc_test_flags = 0;
     reset_errors();
 
-    /* A: normal two-pass frames, frame buffer and texture */
+    /* A: normal two-group frames, frame buffer and texture */
     for(i = 0; i < 4; i++) {
         addr = render(scene_t1, 0);
         t1_fb[i & 1] = addr;
@@ -399,42 +399,43 @@ static void test1(void) {
             a_ok = 0;
     }
 
-    printf("HWTEST T1A two passes, red in pass 0 and green in pass 1: %s\n",
+    printf("HWTEST T1A two groups, red in group 0 and green in group 1: %s\n",
            a_ok ? "PASS" : "FAIL");
-    add_summary("T1A 2-pass frame:", a_ok ? "PASS" : "FAIL");
+    add_summary("T1A 2-group frame:", a_ok ? "PASS" : "FAIL");
 
-    /* D: bit 28 clear on every pass (the tile is written out after each
-       pass): is the picture still right? And render times of the three
-       settings: bit 28 on the first pass (default), on no pass, on both. */
-    pvr_mp_test_flags = PVR_MP_TEST_ALL_WRITEOUT;
+    /* D: bit 28 clear on every group (the tile is written out after each
+       group): is the picture still right? And render times of the three
+       settings: bit 28 on the first group (default), on no group, on both. */
+    pvr_lc_test_flags = PVR_LC_TEST_ALL_WRITEOUT;
     r = 1;
     for(i = 0; i < 4; i++) {
         addr = render(scene_t1, 0);
         if(i >= 2 && t1_classify("T1D-fb", addr, 0) != 1)
             r = 0;
     }
-    pvr_mp_test_flags = 0;
-    printf("HWTEST T1D bit 28 clear on every pass (writeout after each "
-           "pass): picture %s\n", r ? "right" : "WRONG");
-    add_summary("T1D writeout after each pass:", r ? "picture right" : "WRONG");
+    pvr_lc_test_flags = 0;
+    printf("HWTEST T1D bit 28 clear on every group (writeout after each "
+           "group): picture %s\n", r ? "right" : "WRONG");
+    add_summary("T1D writeout after each group:",
+                r ? "picture right" : "WRONG");
 
-    printf("HWTEST T1E average render time (us): bit 28 on pass 0 (default) "
-           "%lu, on no pass %lu\n", (unsigned long)t1_time(0),
-           (unsigned long)t1_time(PVR_MP_TEST_ALL_WRITEOUT));
+    printf("HWTEST T1E average render time (us): bit 28 on group 0 (default) "
+           "%lu, on no group %lu\n", (unsigned long)t1_time(0),
+           (unsigned long)t1_time(PVR_LC_TEST_ALL_WRITEOUT));
     print_errors("T1");
 }
 
 /* T1B, run last: it may leave the PVR (or KOS's view of it) stuck. Bit 28
-   on the last pass too, both frame buffers filled with magenta first. Did
+   on the last group too, both frame buffers filled with magenta first. Did
    the render-done interrupt come, and was anything written? */
 static void test1b(void) {
     static const char *fb_name[2] = { "fbA", "fbB" };
     int i, j, started, done, magic = 1, scene = 1;
     uint16_t c;
 
-    printf("HWTEST T1B ---- bit 28 on the last pass too (run last)\n");
+    printf("HWTEST T1B ---- bit 28 on the last group too (run last)\n");
     pvr_set_bg_color(0.0f, 0.0f, 0.5f);
-    pvr_mp_test_flags = PVR_MP_TEST_LAST_NO_WRITEOUT;
+    pvr_lc_test_flags = PVR_LC_TEST_LAST_NO_WRITEOUT;
 
     for(i = 0; i < 2; i++)
         if(t1_fb[i])
@@ -469,10 +470,10 @@ static void test1b(void) {
            magic ? "bit 28 = 1 on the last entry of a tile: tile not written out" :
            scene ? "bit 28 = 1 on the last entry: tile still written out" :
            "UNEXPECTED: see probe values");
-    add_summary("T1B bit 28 on last pass:",
+    add_summary("T1B bit 28 on last group:",
                 magic ? (done ? "no writeout" : "no writeout, no IRQ") :
                 scene ? "written" : "UNEXPECTED");
-    pvr_mp_test_flags = 0;
+    pvr_lc_test_flags = 0;
 }
 
 /**** T2: waiting before TA_LIST_CONT ******************************/
@@ -487,12 +488,12 @@ static uint32_t rnd(void) {
 #define T2_SMALL 3000
 #define T2_BIG   150
 
-static int t2_one_pass;     /* Everything in pass 0 (reference) */
-static uint64_t t2_cont_us; /* Time spent in pvr_scene_next_pass() */
+static int t2_one_group;     /* Everything in group 0 (reference) */
+static uint64_t t2_cont_us; /* Time spent in pvr_list_continue() */
 
-/* The pass-1 content; with the OP list already open in one-pass mode */
-static void t2_pass1(void) {
-    if(!t2_one_pass)
+/* The group-1 content; with the OP list already open in one-group mode */
+static void t2_group1(void) {
+    if(!t2_one_group)
         pvr_list_begin(PVR_LIST_OP_POLY);
 
     pvr_prim(&hdr_op, sizeof(hdr_op));
@@ -523,7 +524,7 @@ static void scene_t2(void) {
         tri(x, y + 20, x + 10, y, x + 20, y + 20, z, 0xff000000 | rnd());
     }
 
-    /* Then big triangles behind them, ending the pass: each one touches most
+    /* Then big triangles behind them, ending the group: each one touches most
        tiles, so the TA has a lot of binning left when the CPU is done. */
     for(i = 0; i < T2_BIG; i++) {
         float z = 1.0f + (float)(rnd() % 100) / 1000.0f;
@@ -534,21 +535,21 @@ static void scene_t2(void) {
             z, 0xff000000 | rnd());
     }
 
-    if(t2_one_pass) {
-        t2_pass1();
+    if(t2_one_group) {
+        t2_group1();
         return;
     }
 
     pvr_list_finish();
 
     t = timer_us_gettime64();
-    pvr_scene_next_pass();
+    pvr_list_continue();
     t = timer_us_gettime64() - t;
 
     if(t > t2_cont_us)
         t2_cont_us = t;
 
-    t2_pass1();
+    t2_group1();
 }
 
 static int t2_run(const char *tag, int frames, uint32_t ref) {
@@ -576,7 +577,7 @@ static int t2_run(const char *tag, int frames, uint32_t ref) {
     }
 
     printf("HWTEST %s %d frames: %d mismatched, %d timeouts, "
-           "max time in pvr_scene_next_pass %lu us\n", tag, frames, bad,
+           "max time in pvr_list_continue %lu us\n", tag, frames, bad,
            timeouts, (unsigned long)t2_cont_us);
 
     return bad + timeouts;
@@ -589,21 +590,21 @@ static void test2(void) {
 
     printf("HWTEST T2 ---- wait for the done interrupts before TA_LIST_CONT?\n");
     pvr_set_bg_color(0.0f, 0.0f, 0.0f);
-    pvr_mp_test_flags = 0;
+    pvr_lc_test_flags = 0;
     reset_errors();
 
-    /* Information: the same picture with everything in pass 0 */
-    t2_one_pass = 1;
+    /* Information: the same picture with everything in group 0 */
+    t2_one_group = 1;
     render(scene_t2, 0);
     addr = render(scene_t2, 0);
     fb_save(addr);
-    t2_one_pass = 0;
+    t2_one_group = 0;
 
-    /* Reference: two passes, waiting for the done interrupts */
+    /* Reference: two groups, waiting for the done interrupts */
     render(scene_t2, 0);
     addr = render(scene_t2, 0);
     ref = fb_checksum(addr);
-    printf("HWTEST T2 pixels that differ between one pass and two passes: %d "
+    printf("HWTEST T2 pixels that differ between one group and two groups: %d "
            "(expected 0)\n", fb_compare("T2-1v2", addr));
     addr = render(scene_t2, 0);
     ref2 = fb_checksum(addr);
@@ -617,10 +618,10 @@ static void test2(void) {
     errs_wait = print_errors("T2-wait");
 
     reset_errors();
-    pvr_mp_test_flags = PVR_MP_TEST_NO_WAIT;
+    pvr_lc_test_flags = PVR_LC_TEST_NO_WAIT;
     bad_nowait = t2_run("T2-nowait", 1500, ref);
     errs_nowait = print_errors("T2-nowait");
-    pvr_mp_test_flags = 0;
+    pvr_lc_test_flags = 0;
 
     if(ref != ref2 || bad_wait || errs_wait) {
         verdict = "INCONCLUSIVE: errors even with the wait";
@@ -639,7 +640,7 @@ static void test2(void) {
     add_summary("T2 wait before LIST_CONT:", brief);
 }
 
-/**** T3: deferred shading in a z-keep pass ************************/
+/**** T3: deferred shading in a z-keep group ************************/
 
 static void scene_t3(void) {
     pvr_list_begin(PVR_LIST_OP_POLY);
@@ -652,7 +653,7 @@ static void scene_t3(void) {
     quad(32, 32, 320, 448, 2.0f, 0x80ff0000);
     pvr_list_finish();
 
-    pvr_scene_next_pass();
+    pvr_list_continue();
 
     pvr_list_begin(PVR_LIST_OP_POLY);
     pvr_prim(&hdr_op, sizeof(hdr_op));
@@ -669,9 +670,9 @@ static void test3(void) {
     static const probe_t pr[] = {
         { "tint", 186, 220 },      /* red-tinted floor, same tile as a blue quad */
         { "grey", 506, 220 },      /* grey floor, same tile as a blue quad */
-        { "blue-red", 168, 208 },  /* pass-1 quad over the red area */
-        { "blue-grey", 488, 208 }, /* pass-1 quad over the grey area */
-        { "hidden", 408, 208 },    /* pass-1 quad behind the floor */
+        { "blue-red", 168, 208 },  /* group-1 quad over the red area */
+        { "blue-grey", 488, 208 }, /* group-1 quad over the grey area */
+        { "hidden", 408, 208 },    /* group-1 quad behind the floor */
         { "bg", 16, 16 },          /* background outside the floor */
     };
     const uint32_t tint = RGB(191, 64, 64), grey = RGB(128, 128, 128),
@@ -682,9 +683,9 @@ static void test3(void) {
     int i, f, ok = 1;
     const char *verdict, *brief;
 
-    printf("HWTEST T3 ---- opaque shading in a z-keep pass\n");
+    printf("HWTEST T3 ---- opaque shading in a z-keep group\n");
     pvr_set_bg_color(0.0f, 96.0f / 255.0f, 0.0f);
-    pvr_mp_test_flags = 0;
+    pvr_lc_test_flags = 0;
     reset_errors();
 
     for(f = 0; f < 3; f++) {
@@ -699,19 +700,19 @@ static void test3(void) {
     }
 
     if(ok) {
-        verdict = "PASS: pass-1 opaque shading leaves pass-0 pixels alone, depth kept";
+        verdict = "PASS: group-1 opaque shading leaves group-0 pixels alone, depth kept";
         brief = "own pixels only (PASS)";
     }
     else if(near(c[0], grey)) {
-        verdict = "FAIL: pass 1 re-shaded pass-0 pixels (red tint lost)";
-        brief = "RE-SHADES pass 0";
+        verdict = "FAIL: group 1 re-shaded group-0 pixels (red tint lost)";
+        brief = "RE-SHADES group 0";
     }
     else if(near(c[0], bg) || near(c[1], bg)) {
-        verdict = "FAIL: background came back in pass 1";
+        verdict = "FAIL: background came back in group 1";
         brief = "BACKGROUND back";
     }
     else if(near(c[4], blue)) {
-        verdict = "FAIL: pass 1 not depth tested against pass 0 (depth cleared)";
+        verdict = "FAIL: group 1 not depth tested against group 0 (depth cleared)";
         brief = "DEPTH cleared";
     }
     else {
@@ -724,7 +725,7 @@ static void test3(void) {
     print_errors("T3");
 }
 
-/**** T4: TA_OL_BASE between passes ********************************/
+/**** T4: TA_OL_BASE between groups ********************************/
 
 static void scene_t4(void) {
     pvr_list_begin(PVR_LIST_OP_POLY);
@@ -732,7 +733,7 @@ static void scene_t4(void) {
     quad(64, 160, 288, 320, 1.0f, 0xffff0000);
     pvr_list_finish();
 
-    pvr_scene_next_pass();
+    pvr_list_continue();
 
     pvr_list_begin(PVR_LIST_TR_POLY);
     pvr_prim(&hdr_tr, sizeof(hdr_tr));
@@ -740,7 +741,7 @@ static void scene_t4(void) {
     pvr_list_finish();
 }
 
-/* 'S'eparate passes (correct), 'O'verwritten, 'A'ppended, 'E'lsewhere,
+/* 'S'eparate groups (correct), 'O'verwritten, 'A'ppended, 'E'lsewhere,
    '?' anything else */
 static char t4_classify(const char *tag, uint32_t addr) {
     static const probe_t pr[] = { { "left", 176, 240 }, { "right", 464, 240 } };
@@ -754,7 +755,7 @@ static char t4_classify(const char *tag, uint32_t addr) {
     }
 
     if(red && near(r, RGB(128, 128, 128))) return 'S';
-    /* Overwritten: pass 0's opaque quad lost; the translucent quad drawn
+    /* Overwritten: group 0's opaque quad lost; the translucent quad drawn
        once (it writes depth, so the second entry's copy fails the depth
        test) or twice */
     if(black && (near(r, RGB(128, 128, 128)) || near(r, RGB(191, 191, 191))))
@@ -770,9 +771,9 @@ static void test4(void) {
     char k;
     const char *verdict, *brief;
 
-    printf("HWTEST T4 ---- is moving TA_OL_BASE between passes needed?\n");
+    printf("HWTEST T4 ---- is moving TA_OL_BASE between groups needed?\n");
     pvr_set_bg_color(0.0f, 0.0f, 0.0f);
-    pvr_mp_test_flags = 0;
+    pvr_lc_test_flags = 0;
     reset_errors();
 
     for(i = 0; i < 3; i++) {
@@ -785,7 +786,7 @@ static void test4(void) {
     print_errors("T4-control");
 
     reset_errors();
-    pvr_mp_test_flags = PVR_MP_TEST_NO_OL_BASE;
+    pvr_lc_test_flags = PVR_LC_TEST_NO_OL_BASE;
 
     for(i = 0; i < 30; i++) {
         addr = render(scene_t4, 0);
@@ -794,7 +795,7 @@ static void test4(void) {
         n[k == 'S' ? 0 : k == 'O' ? 1 : k == 'A' ? 2 : k == 'E' ? 3 : 4]++;
     }
 
-    pvr_mp_test_flags = 0;
+    pvr_lc_test_flags = 0;
     printf("HWTEST T4 without moving TA_OL_BASE, 30 frames: separate %d, "
            "overwritten %d, appended %d, elsewhere %d, other/timeout %d\n",
            n[0], n[1], n[2], n[3], n[4]);
@@ -805,19 +806,20 @@ static void test4(void) {
         brief = "INCONCLUSIVE";
     }
     else if(n[1] == 30) {
-        verdict = "NEEDED: without it, pass 1 overwrites pass 0's first blocks";
+        verdict = "NEEDED: without it, group 1 overwrites group 0's first "
+                  "blocks";
         brief = "NEEDED (overwrites)";
     }
     else if(n[2] == 30) {
-        verdict = "NEEDED: without it, pass 1 is appended to pass 0's lists";
+        verdict = "NEEDED: without it, group 1 is appended to group 0's lists";
         brief = "NEEDED (appends)";
     }
     else if(n[3] == 30) {
-        verdict = "UNCLEAR: pass 1's lists went elsewhere";
+        verdict = "UNCLEAR: group 1's lists went elsewhere";
         brief = "UNCLEAR (elsewhere)";
     }
     else if(n[0] == 30) {
-        verdict = "UNCLEAR: passes stayed separate without it";
+        verdict = "UNCLEAR: groups stayed separate without it";
         brief = "UNCLEAR (separate)";
     }
     else {
@@ -836,9 +838,9 @@ static void test4(void) {
     add_summary("T4 recovery:", k == 'S' ? "PASS" : "FAIL");
 }
 
-/**** T5: modifier volumes across passes ***************************/
+/**** T5: modifier volumes across groups ***************************/
 
-static int t5_pass1_volume;
+static int t5_group1_volume;
 
 static void scene_t5(void) {
     pvr_list_begin(PVR_LIST_OP_POLY);
@@ -850,14 +852,14 @@ static void scene_t5(void) {
     mod_rect(32, 32, 320, 448);
     pvr_list_finish();
 
-    pvr_scene_next_pass();
+    pvr_list_continue();
 
     pvr_list_begin(PVR_LIST_OP_POLY);
     pvr_prim(&hdr_op_shadow, sizeof(hdr_op_shadow));
     quad(200, 160, 440, 320, 2.0f, 0xffffffff);
     pvr_list_finish();
 
-    if(t5_pass1_volume) {
+    if(t5_group1_volume) {
         pvr_list_begin(PVR_LIST_OP_MOD);
         mod_rect(320, 32, 608, 448);
         pvr_list_finish();
@@ -866,23 +868,23 @@ static void scene_t5(void) {
 
 static void test5(void) {
     static const probe_t pr[] = {
-        { "floor-L", 100, 100 },   /* pass-0 floor in the pass-0 volume */
-        { "floor-R", 540, 100 },   /* pass-0 floor outside it */
-        { "quad-L", 260, 240 },    /* pass-1 quad in the pass-0 volume */
-        { "quad-R", 380, 240 },    /* pass-1 quad outside it */
+        { "floor-L", 100, 100 },   /* group-0 floor in the group-0 volume */
+        { "floor-R", 540, 100 },   /* group-0 floor outside it */
+        { "quad-L", 260, 240 },    /* group-1 quad in the group-0 volume */
+        { "quad-R", 380, 240 },    /* group-1 quad outside it */
     };
     uint32_t addr;
     uint16_t a[4], b[4];
     int i;
     const char *v1, *v2, *b1, *b2;
 
-    printf("HWTEST T5 ---- modifier volumes across passes (cheap shadow)\n");
+    printf("HWTEST T5 ---- modifier volumes across groups (cheap shadow)\n");
     pvr_set_bg_color(0.0f, 0.0f, 0.0f);
     pvr_set_shadow_scale(true, 0.5f);
-    pvr_mp_test_flags = 0;
+    pvr_lc_test_flags = 0;
     reset_errors();
 
-    t5_pass1_volume = 0;
+    t5_group1_volume = 0;
     for(i = 0; i < 3; i++)
         addr = render(scene_t5, 0);
     for(i = 0; i < 4; i++) {
@@ -890,7 +892,7 @@ static void test5(void) {
         print_probe("T5A", &pr[i], a[i]);
     }
 
-    t5_pass1_volume = 1;
+    t5_group1_volume = 1;
     for(i = 0; i < 3; i++)
         addr = render(scene_t5, 0);
     for(i = 0; i < 4; i++) {
@@ -901,15 +903,15 @@ static void test5(void) {
     pvr_set_shadow_scale(false, 1.0f);
 
     if(!near(a[0], RGB(64, 64, 64)) || !near(a[1], RGB(128, 128, 128))) {
-        v1 = "INCONCLUSIVE: the pass-0 volume didn't shadow the floor as expected";
+        v1 = "INCONCLUSIVE: the group-0 volume didn't shadow the floor as expected";
         b1 = "INCONCLUSIVE";
     }
     else if(near(a[2], RGB(255, 255, 255)) && near(a[3], RGB(255, 255, 255))) {
-        v1 = "a pass-0 volume does NOT affect pass-1 polygons (stencil cleared)";
+        v1 = "a group-0 volume does NOT affect group-1 polygons (stencil cleared)";
         b1 = "no (cleared)";
     }
     else if(near(a[2], RGB(128, 128, 128)) && near(a[3], RGB(255, 255, 255))) {
-        v1 = "a pass-0 volume DOES shadow pass-1 polygons (stencil kept)";
+        v1 = "a group-0 volume DOES shadow group-1 polygons (stencil kept)";
         b1 = "YES (kept)";
     }
     else {
@@ -919,12 +921,12 @@ static void test5(void) {
 
     if(near(b[1], RGB(128, 128, 128)) && near(b[3], RGB(128, 128, 128))
        && near(b[2], rgb565_to_888(a[2]))) {
-        v2 = "a pass-1 volume shadows pass-1 polygons only";
-        b2 = "own pass only";
+        v2 = "a group-1 volume shadows group-1 polygons only";
+        b2 = "own group only";
     }
     else if(near(b[1], RGB(64, 64, 64)) && near(b[3], RGB(128, 128, 128))) {
-        v2 = "a pass-1 volume also shadows pass-0 pixels";
-        b2 = "ALSO pass-0 pixels";
+        v2 = "a group-1 volume also shadows group-0 pixels";
+        b2 = "ALSO group-0 pixels";
     }
     else {
         v2 = "UNEXPECTED: see probe values";
@@ -933,8 +935,8 @@ static void test5(void) {
 
     printf("HWTEST T5 RESULT A: %s\n", v1);
     printf("HWTEST T5 RESULT B: %s\n", v2);
-    add_summary("T5A pass-0 vol on pass 1:", b1);
-    add_summary("T5B pass-1 vol on pass 0:", b2);
+    add_summary("T5A group-0 vol on group 1:", b1);
+    add_summary("T5B group-1 vol on group 0:", b2);
     print_errors("T5");
 }
 
@@ -946,7 +948,7 @@ static pvr_init_params_t params = {
     .vertex_buf_size = 1024 * 1024,
     .fsaa_enabled = HWTEST_FSAA,
     .opb_overflow_count = 8,
-    .pass_count = 2,
+    .list_group_count = 2,
 };
 
 static void show_summary(void) {
@@ -960,8 +962,8 @@ static void show_summary(void) {
     vid_clear(0, 0, 0);
 
     bfont_draw_str(vram_s + 16 * W + 16, W, true,
-                   HWTEST_FSAA ? "multipass_hwtest (FSAA)" :
-                                 "multipass_hwtest (no FSAA)");
+                   HWTEST_FSAA ? "listcont_hwtest (FSAA)" :
+                                 "listcont_hwtest (no FSAA)");
 
     for(i = 0; i < summary_n; i++)
         bfont_draw_str(vram_s + (56 + i * 26) * W + 8, W, true, summary[i]);
@@ -984,7 +986,7 @@ int main(int argc, char *argv[]) {
     (void)argc;
     (void)argv;
 
-    printf("HWTEST multipass_hwtest start, FSAA %s\n", HWTEST_FSAA ? "on" : "off");
+    printf("HWTEST listcont_hwtest start, FSAA %s\n", HWTEST_FSAA ? "on" : "off");
 
     if(pvr_init(&params) < 0) {
         printf("HWTEST pvr_init failed\n");

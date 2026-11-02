@@ -1,13 +1,13 @@
 # KallistiOS ##version##
 #
-# examples/dreamcast/pvr/multipass_hwtest/Makefile
+# examples/dreamcast/pvr/listcont_hwtest/Makefile
 #
-# Builds multipass_hwtest.elf (no FSAA) and multipass_hwtest_fsaa.elf (FSAA).
+# Builds listcont_hwtest.elf (no FSAA) and listcont_hwtest_fsaa.elf (FSAA).
 
-TARGET = multipass_hwtest.elf
-TARGET_FSAA = multipass_hwtest_fsaa.elf
-OBJS = multipass_hwtest.o
-OBJS_FSAA = multipass_hwtest_fsaa.o
+TARGET = listcont_hwtest.elf
+TARGET_FSAA = listcont_hwtest_fsaa.elf
+OBJS = listcont_hwtest.o
+OBJS_FSAA = listcont_hwtest_fsaa.o
 
 all: rm-elf $(TARGET) $(TARGET_FSAA)
 
@@ -19,7 +19,7 @@ clean: rm-elf
 rm-elf:
 	-rm -f $(TARGET) $(TARGET_FSAA)
 
-multipass_hwtest_fsaa.o: multipass_hwtest.c
+listcont_hwtest_fsaa.o: listcont_hwtest.c
 	kos-cc $(CFLAGS) -DHWTEST_FSAA=1 -c $< -o $@
 
 $(TARGET): $(OBJS)
