@@ -27,8 +27,8 @@
 #  define PVR_DEBUG 1
 #endif
 
-/* How long to wait for the TA to finish the lists of a render pass */
-#define PVR_PASS_TIMEOUT_US 100000
+/* How long to wait for the TA to finish the lists of a list group */
+#define PVR_GROUP_TIMEOUT_US 100000
 
 /*
 
@@ -131,7 +131,7 @@ void pvr_scene_begin(void) {
     pvr_state.next_to_texture = 0;
     pvr_state.ta_checked_ready = 0;
     pvr_state.lists_closed = 0;
-    pvr_state.pass_cur = 0;
+    pvr_state.group_cur = 0;
 
     // Get general stuff ready.
     pvr_state.list_reg_open = PVR_LIST_NONE;
@@ -301,11 +301,11 @@ int pvr_list_flush(pvr_list_t list) {
     return -1;
 }
 
-/* Close the current pass: close the open list, if any, and submit blank lists
+/* Close the current group: close the open list, if any, and submit blank lists
    for the enabled lists that weren't submitted in it. Every first OPB of the
-   pass is then terminated, and every enabled list will raise its done
+   group is then terminated, and every enabled list will raise its done
    interrupt. */
-static void pvr_pass_close(void) {
+static void pvr_group_close(void) {
     int i;
 
     /* If a list was open, close it */
@@ -323,9 +323,9 @@ static void pvr_pass_close(void) {
     }
 }
 
-/* Wait until the TA has processed every list of the given pass, i.e. until
-   each enabled list has raised its done interrupt pass + 1 times. */
-static int pvr_pass_wait(int pass) {
+/* Wait until the TA has processed every list of the given group, i.e. until
+   each enabled list has raised its done interrupt group + 1 times. */
+static int pvr_group_wait(int group) {
     uint64_t start = timer_us_gettime64();
     int i;
 
@@ -333,10 +333,10 @@ static int pvr_pass_wait(int pass) {
         if(!(pvr_state.lists_enabled & BIT(i)))
             continue;
 
-        while(pvr_state.lists_done[i] < pass + 1) {
-            if(timer_us_gettime64() - start > PVR_PASS_TIMEOUT_US) {
-                dbglog(DBG_WARNING, "pvr: timed out waiting for pass %d "
-                       "of list %d\n", pass, i);
+        while(pvr_state.lists_done[i] < group + 1) {
+            if(timer_us_gettime64() - start > PVR_GROUP_TIMEOUT_US) {
+                dbglog(DBG_WARNING, "pvr: timed out waiting for group %d "
+                       "of list %d\n", group, i);
                 return -1;
             }
         }
@@ -346,53 +346,54 @@ static int pvr_pass_wait(int pass) {
 }
 
 /* Hardware test hooks, see pvr_internal.h */
-volatile uint32_t pvr_mp_test_flags;
+volatile uint32_t pvr_lc_test_flags;
 
-/* Move the TA on to the next pass of a closed pass. */
-static void pvr_pass_continue(void) {
+/* Move the TA on to the next group after a closed one: TA list
+   continuation. */
+static void pvr_ta_continue(void) {
     volatile pvr_ta_buffers_t *buf;
-    int pass = pvr_state.pass_cur + 1;
+    int group = pvr_state.group_cur + 1;
 
-    /* Let the TA finish the lists of the closed pass first. On hardware,
+    /* Let the TA finish the lists of the closed group first. On hardware,
        writing TA_LIST_CONT while the TA was still binning gave the same
        picture, but the wait is short and keeps it safe. */
-    if(!(pvr_mp_test_flags & PVR_MP_TEST_NO_WAIT))
-        pvr_pass_wait(pvr_state.pass_cur);
+    if(!(pvr_lc_test_flags & PVR_LC_TEST_NO_WAIT))
+        pvr_group_wait(pvr_state.group_cur);
 
-    /* The next pass's object lists start in that pass's first OPBs, which
+    /* The next group's object lists start in that group's first OPBs, which
        its region array entries point to (without this, the TA overwrites
-       the previous pass's first OPBs); then restart list input. Overflow
-       OPBs keep being allocated from where the earlier passes left off. */
+       the previous group's first OPBs); then restart list input. Overflow
+       OPBs keep being allocated from where the earlier groups left off. */
     buf = pvr_state.ta_buffers + pvr_state.ta_target;
 
-    if(!(pvr_mp_test_flags & PVR_MP_TEST_NO_OL_BASE))
-        PVR_SET(PVR_TA_OPB_START, buf->opb + buf->opb_size * pass);
+    if(!(pvr_lc_test_flags & PVR_LC_TEST_NO_OL_BASE))
+        PVR_SET(PVR_TA_OPB_START, buf->opb + buf->opb_size * group);
 
     PVR_SET(PVR_TA_LIST_CONT, BIT(31));
     (void)PVR_GET(PVR_TA_LIST_CONT);
 
     pvr_state.lists_closed = 0;
-    pvr_state.pass_cur = pass;
+    pvr_state.group_cur = group;
 }
 
-int pvr_scene_next_pass(void) {
+int pvr_list_continue(void) {
     if(pvr_state.dma_mode) {
-        dbglog(DBG_ERROR, "pvr_scene_next_pass: multipass rendering isn't "
+        dbglog(DBG_ERROR, "pvr_list_continue: list continuation isn't "
                "available with vertex DMA\n");
         return -1;
     }
 
-    if(pvr_state.pass_cur >= pvr_state.pass_count - 1)
+    if(pvr_state.group_cur >= pvr_state.group_count - 1)
         return -1;
 
-    pvr_pass_close();
-    pvr_pass_continue();
+    pvr_group_close();
+    pvr_ta_continue();
 
     return 0;
 }
 
-int pvr_scene_get_pass(void) {
-    return pvr_state.pass_cur;
+int pvr_list_get_group(void) {
+    return pvr_state.group_cur;
 }
 
 /* Call this after you have finished submitting all data for a frame; once
@@ -454,14 +455,14 @@ int pvr_scene_finish(void) {
         pvr_start_dma();
     }
     else {
-        /* Close the current pass. */
-        pvr_pass_close();
+        /* Close the current group. */
+        pvr_group_close();
 
-        /* The region array has entries for every pass: submit the passes
+        /* The region array has entries for every group: submit the groups
            that weren't used, empty. */
-        while(pvr_state.pass_cur < pvr_state.pass_count - 1) {
-            pvr_pass_continue();
-            pvr_pass_close();
+        while(pvr_state.group_cur < pvr_state.group_count - 1) {
+            pvr_ta_continue();
+            pvr_group_close();
         }
     }
 

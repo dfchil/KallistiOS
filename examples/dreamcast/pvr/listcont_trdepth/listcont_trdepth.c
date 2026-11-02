@@ -1,21 +1,21 @@
 /* KallistiOS ##version##
 
-   examples/dreamcast/pvr/multipass_trdepth/multipass_trdepth.c
+   examples/dreamcast/pvr/listcont_trdepth/listcont_trdepth.c
 
    Hardware test: does a translucent polygon without depth write hide the
-   polygons of a later pass?
+   polygons of a later group?
 
-   Pass 0 draws a grey opaque floor at z 1 and a 50% red translucent quad at
-   z 5 with depth write off. Pass 1 draws opaque quads: a blue one at z 3
+   Group 0 draws a grey opaque floor at z 1 and a 50% red translucent quad at
+   z 5 with depth write off. Group 1 draws opaque quads: a blue one at z 3
    under the translucent quad, a blue one at z 3 outside it, and a green one
    at z 0.5, behind the floor, as a control.
 
-   Renders that scene with pass 0 autosorted and presorted, each with depth
+   Renders that scene with group 0 autosorted and presorted, each with depth
    write off and on for the translucent quad, reads the pixels back from the
    frame buffer and prints them on the serial console. Each result line
    starts with "HWTEST".
 
-   Result on hardware: after an autosorted translucent list, later passes are
+   Result on hardware: after an autosorted translucent list, later groups are
    depth tested against its polygons even with depth write off. A presorted
    list follows the depth write setting.
 */
@@ -62,7 +62,7 @@ static void scene(void) {
     pvr_prim(tr_write ? &hdr_tr_write : &hdr_tr_nowrite, 32);
     quad(100, 100, 540, 380, 5.0f, 0x80ff0000);
 
-    pvr_scene_next_pass();
+    pvr_list_continue();
 
     pvr_list_begin(PVR_LIST_OP_POLY);
     pvr_prim(&hdr_op, 32);
@@ -81,7 +81,7 @@ int main(void) {
                        PVR_BINSIZE_0, PVR_BINSIZE_0 },
         .vertex_buf_size = 512 * 1024,
         .opb_overflow_count = 3,
-        .pass_count = 2,
+        .list_group_count = 2,
     };
     pvr_poly_cxt_t cxt;
     int mode, f;
@@ -100,7 +100,7 @@ int main(void) {
     cxt.depth.write = PVR_DEPTHWRITE_ENABLE;
     pvr_poly_compile(&hdr_tr_write, &cxt);
 
-    printf("HWTEST multipass_trdepth start\n");
+    printf("HWTEST listcont_trdepth start\n");
 
     for(mode = 0; mode < 4; mode++) {
         volatile uint16_t *fb;
@@ -108,7 +108,7 @@ int main(void) {
 
         tr_write = mode >> 1;
         pvr_wait_ready();
-        pvr_set_pass_presort(0, mode & 1);
+        pvr_set_group_presort(0, mode & 1);
 
         for(f = 0; f < 4; f++) {
             pvr_wait_ready();
@@ -122,7 +122,7 @@ int main(void) {
         addr = PVR_GET(PVR_RENDER_ADDR) & 0xffffff;
         fb = (volatile uint16_t *)(PVR_RAM_BASE + addr);
 
-        printf("HWTEST pass 0 %s, TR depth write %s: under-TR quad %06lx "
+        printf("HWTEST group 0 %s, TR depth write %s: under-TR quad %06lx "
                "(0000f8=not occluded, c04040=occluded), behind-floor %06lx, "
                "outside %06lx, tint %06lx\n",
                (mode & 1) ? "presort " : "autosort", tr_write ? "on " : "off",
