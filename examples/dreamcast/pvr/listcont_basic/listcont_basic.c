@@ -1,21 +1,21 @@
 /* KallistiOS ##version##
 
-   examples/dreamcast/pvr/multipass_basic/multipass_basic.c
+   examples/dreamcast/pvr/listcont_basic/listcont_basic.c
 
-   Multipass rendering basics (pvr_init_params_t::pass_count).
+   List continuation basics (pvr_init_params_t::list_group_count).
 
-   Pass 0 draws a grey opaque floor and a 50% red translucent wall standing
-   on it. Pass 1 draws a blue opaque cube that cuts through the floor and
+   Group 0 draws a grey opaque floor and a 50% red translucent wall standing
+   on it. Group 1 draws a blue opaque cube that cuts through the floor and
    turns behind the wall.
 
-   - Mode 1, two passes, pass 0 presorted: the cube is depth tested against
-     the floor drawn in pass 0 (the floor cuts the cube), and the red
-     translucency of pass 0 survives around the cube. Since all of pass 1 is
-     drawn after all of pass 0, the cube covers the wall even where it is
+   - Mode 1, two groups, group 0 presorted: the cube is depth tested against
+     the floor drawn in group 0 (the floor cuts the cube), and the red
+     translucency of group 0 survives around the cube. Since all of group 1 is
+     drawn after all of group 0, the cube covers the wall even where it is
      behind it: the wall doesn't write depth.
-   - Mode 2, one pass: the same polygons go into one set of lists, and the
+   - Mode 2, one group: the same polygons go into one set of lists, and the
      translucent wall is blended over the cube where the wall is in front.
-   - Mode 3, two passes, pass 0 autosorted: an autosorted translucent list
+   - Mode 3, two groups, group 0 autosorted: an autosorted translucent list
      leaves its polygons' depth in the depth buffer, whatever their depth
      write setting, so the wall hides the cube where the cube is behind it.
 
@@ -88,18 +88,18 @@ static void compile_headers(void) {
     pvr_poly_compile(&hdr_tr, &cxt);
 }
 
-/* (Re)initialize the PVR for the given number of passes and FSAA setting.
+/* (Re)initialize the PVR for the given number of groups and FSAA setting.
    Returns 1 if it did. */
-static int setup(int passes) {
-    static int cur_passes = -1, cur_fsaa = -1;
+static int setup(int groups) {
+    static int cur_groups = -1, cur_fsaa = -1;
 
-    if(passes == cur_passes && fsaa == cur_fsaa)
+    if(groups == cur_groups && fsaa == cur_fsaa)
         return 0;
 
-    if(cur_passes >= 0)
+    if(cur_groups >= 0)
         pvr_shutdown();
 
-    params.pass_count = passes;
+    params.list_group_count = groups;
     params.fsaa_enabled = fsaa;
     pvr_init(&params);
     pvr_set_bg_color(0.1f, 0.1f, 0.2f);
@@ -108,7 +108,7 @@ static int setup(int passes) {
     txt_tex = pvr_mem_malloc(sizeof(txt_buf));
     compile_headers();
 
-    cur_passes = passes;
+    cur_groups = groups;
     cur_fsaa = fsaa;
 
     return 1;
@@ -220,19 +220,19 @@ static void cube(float angle) {
 
 /**** Main *********************************************************/
 
-static void do_frame(int two_pass, float angle) {
+static void do_frame(int two_groups, float angle) {
     pvr_wait_ready();
     pvr_scene_begin();
 
-    if(two_pass) {
-        /* Pass 0: floor and wall */
+    if(two_groups) {
+        /* Group 0: floor and wall */
         pvr_list_begin(PVR_LIST_OP_POLY);
         floor_quad();
         pvr_list_begin(PVR_LIST_TR_POLY);
         wall_quad();
 
-        /* Pass 1: the cube, and the text on top of everything */
-        pvr_scene_next_pass();
+        /* Group 1: the cube, and the text on top of everything */
+        pvr_list_continue();
         pvr_list_begin(PVR_LIST_OP_POLY);
         cube(angle);
         pvr_list_begin(PVR_LIST_TR_POLY);
@@ -263,7 +263,7 @@ int main(int argc, char *argv[]) {
     (void)argc;
     (void)argv;
 
-    printf("multipass_basic: A = mode, Y = FSAA, Start = exit\n");
+    printf("listcont_basic: A = mode, Y = FSAA, Start = exit\n");
 
     for(;;) {
         cont = maple_enum_type(0, MAPLE_FUNC_CONTROLLER);
@@ -290,12 +290,12 @@ int main(int argc, char *argv[]) {
         if(setup(mode == 1 ? 1 : 2))
             applied = -1;
 
-        /* Sort mode of pass 0, set once the previous scene has started
+        /* Sort mode of group 0, set once the previous scene has started
            rendering so that it applies to the next one. It is kept until
            changed, and pvr_init() resets it. */
         if(mode != 1 && applied != mode) {
             pvr_wait_ready();
-            pvr_set_pass_presort(0, mode == 0);
+            pvr_set_group_presort(0, mode == 0);
             applied = mode;
         }
 
@@ -303,9 +303,9 @@ int main(int argc, char *argv[]) {
         if((frame++ % 30) == 0 || pressed) {
             pvr_get_stats(&stats);
             snprintf(l1, sizeof(l1), "%d: %s%s", mode + 1,
-                     mode == 0 ? "2 passes, pass 0 presorted" :
-                     mode == 1 ? "1 pass, cube in the same OP" :
-                                 "2 passes, pass 0 autosorted",
+                     mode == 0 ? "2 groups, group 0 presorted" :
+                     mode == 1 ? "1 group, cube in the same OP" :
+                                 "2 groups, group 0 autosorted",
                      fsaa ? ", FSAA" : "");
             /* Right after pvr_init(), there is no render time yet. */
             if(stats.rnd_last_time < 1000000000ULL)
@@ -316,7 +316,7 @@ int main(int argc, char *argv[]) {
             text_set(l1, l2);
 
             if((frame % 60) == 1)
-                printf("multipass_basic: %s; %s\n", l1, l2);
+                printf("listcont_basic: %s; %s\n", l1, l2);
         }
 
         do_frame(mode != 1, angle);

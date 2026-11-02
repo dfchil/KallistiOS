@@ -1,34 +1,25 @@
 /* KallistiOS ##version##
 
-   examples/dreamcast/pvr/multipass_decal/multipass_decal.c
+   examples/dreamcast/pvr/listcont_viewmodel/listcont_viewmodel.c
 
-   Opaque objects over a translucent decal, with multipass rendering
-   (pvr_init_params_t::pass_count).
+   A first-person "view model" with its own depth range, with list
+   continuation (pvr_init_params_t::list_group_count).
 
-   A ring of turning boxes stands on a ground plane. Each box casts a shadow
-   drawn as a translucent polygon without depth write, at a constant depth
-   that is nearer than everything, as a screen-space shadow (for example a
-   dither pattern) needs. The boxes must cover the shadows whatever the
-   depths. Three ways to draw it:
+   The camera stands right in front of a wall and holds a long object that
+   would poke into it. Group 0 draws the room. At its end, in a presorted
+   translucent list, a full-screen polygon with alpha 0, depth compare
+   "always", depth write on and the farthest depth resets the depth buffer
+   and leaves the colour alone. Group 1 then draws the held object in the
+   opaque list: it is depth tested only against itself, and stays in front
+   of the wall.
 
-   - Mode 1, one pass, boxes in the opaque list: the shadows, drawn after all
-     opaque polygons and nearer, show through the boxes. Wrong.
-   - Mode 2, one pass, presorted translucent list with the shadows first and
-     the boxes after them, writing depth: right, but every box pixel goes
-     through translucent shading, overdraw included.
-   - Mode 3, two passes: shadows in pass 0's presorted translucent list,
-     boxes in pass 1's opaque list. Pass 1 is drawn after pass 0 and depth
-     tested against pass 0's ground only: right, and the boxes keep the
-     opaque list's deferred shading (each pixel shaded once).
-   - Mode 4, the same with pass 0 autosorted: an autosorted translucent
-     list leaves its polygons' depth in the depth buffer, whatever their
-     depth write setting, so the too-near shadows hide the boxes again.
-     A pass whose translucent polygons must not hide later passes has to be
-     presorted.
+   With one group, the held object goes into the same opaque list as the
+   room, and clips into the wall.
 
-   Controls: A cycles the modes (the mode also changes by itself every 5
-   seconds until A is pressed), Y toggles FSAA, Start exits. The mode and the
-   PVR render time are shown on screen and printed on the serial console.
+   Controls: A switches between one and two groups (the mode also changes by
+   itself every 5 seconds until A is pressed), Y toggles FSAA, Start exits.
+   The mode and the PVR render time are shown on screen and printed on the
+   serial console.
 */
 
 #include <stdio.h>
@@ -88,22 +79,22 @@ static void text_render_time(char *buf, size_t size) {
 
 static void compile_headers(void);
 
-/* (Re)initialize the PVR for the given number of passes and FSAA setting.
+/* (Re)initialize the PVR for the given number of groups and FSAA setting.
    Returns 1 if it did. */
-static int setup(int passes) {
-    static int cur_passes = -1, cur_fsaa = -1;
+static int setup(int groups) {
+    static int cur_groups = -1, cur_fsaa = -1;
     pvr_poly_cxt_t cxt;
 
-    if(passes == cur_passes && fsaa == cur_fsaa)
+    if(groups == cur_groups && fsaa == cur_fsaa)
         return 0;
 
-    if(cur_passes >= 0)
+    if(cur_groups >= 0)
         pvr_shutdown();
 
-    params.pass_count = passes;
+    params.list_group_count = groups;
     params.fsaa_enabled = fsaa;
     pvr_init(&params);
-    pvr_set_bg_color(0.45f, 0.6f, 0.85f);
+    pvr_set_bg_color(0.1f, 0.1f, 0.1f);
 
     xs = fsaa ? 2.0f : 1.0f;
     txt_tex = pvr_mem_malloc(sizeof(txt_buf));
@@ -115,7 +106,7 @@ static int setup(int passes) {
     pvr_poly_compile(&hdr_txt, &cxt);
     compile_headers();
 
-    cur_passes = passes;
+    cur_groups = groups;
     cur_fsaa = fsaa;
 
     return 1;
@@ -234,129 +225,131 @@ static void box(vec3_t c, vec3_t h, float angle, const uint32_t colors[6]) {
                  colors[i]);
 }
 
+/* A screen-space rectangle (640x480 coordinates) */
+static void rect(float x0, float y0, float x1, float y1, float z, uint32_t argb) {
+    pvr_vertex_t v __attribute__((aligned(32)));
+
+    v.u = v.v = 0.0f;
+    v.argb = argb;
+    v.oargb = 0;
+    v.z = z;
+    v.flags = PVR_CMD_VERTEX;
+    v.x = x0 * xs; v.y = y1;
+    pvr_prim(&v, sizeof(v));
+    v.y = y0;
+    pvr_prim(&v, sizeof(v));
+    v.x = x1 * xs; v.y = y1;
+    pvr_prim(&v, sizeof(v));
+    v.flags = PVR_CMD_VERTEX_EOL;
+    v.y = y0;
+    pvr_prim(&v, sizeof(v));
+}
+
 /**** Scene ********************************************************/
 
-#define NUM_BOXES 16
-
-static pvr_poly_hdr_t hdr_op, hdr_tr, hdr_tr_box;
+static pvr_poly_hdr_t hdr_op, hdr_tr, hdr_reset;
 
 static void compile_headers(void) {
     pvr_poly_cxt_t cxt;
 
-    /* No culling: the depth buffer sorts the faces out */
     pvr_poly_cxt_col(&cxt, PVR_LIST_OP_POLY);
     cxt.gen.culling = PVR_CULLING_NONE;
     pvr_poly_compile(&hdr_op, &cxt);
 
-    /* The shadows: translucent, no depth write */
     pvr_poly_cxt_col(&cxt, PVR_LIST_TR_POLY);
     cxt.gen.culling = PVR_CULLING_NONE;
     cxt.depth.write = PVR_DEPTHWRITE_DISABLE;
     pvr_poly_compile(&hdr_tr, &cxt);
 
-    /* Boxes in a presorted translucent list: they write depth, so that
-       they hide each other's faces */
+    /* The depth reset: drawn whatever the depth, writes depth, and leaves
+       the colour unchanged (alpha 0, and blending ZERO / ONE to be sure) */
     pvr_poly_cxt_col(&cxt, PVR_LIST_TR_POLY);
     cxt.gen.culling = PVR_CULLING_NONE;
+    cxt.depth.comparison = PVR_DEPTHCMP_ALWAYS;
     cxt.depth.write = PVR_DEPTHWRITE_ENABLE;
-    pvr_poly_compile(&hdr_tr_box, &cxt);
+    cxt.blend.src = PVR_BLEND_ZERO;
+    cxt.blend.dst = PVR_BLEND_ONE;
+    pvr_poly_compile(&hdr_reset, &cxt);
 }
 
-static void ground(void) {
-    vec3_t g[4] = { { -12, 0, -12 }, { -12, 0, 12 }, { 12, 0, 12 }, { 12, 0, -12 } };
-
-    pvr_prim(&hdr_op, sizeof(hdr_op));
-    quad3(g[0], g[1], g[2], g[3], 0xff6a8a5a);
-}
-
-static vec3_t box_pos(int i, float t) {
-    float a = t * 0.3f + i * (2.0f * (float)M_PI / NUM_BOXES);
-    vec3_t p = { 4.5f * cosf(a), 0.6f, 4.5f * sinf(a) };
-
-    return p;
-}
-
-static void boxes(float t) {
-    static const uint32_t colors[6] = {
-        0xff802020, 0xffff6040, 0xffe04030, 0xffb03020, 0xffd05040, 0xff902818
-    };
-    vec3_t h = { 0.7f, 0.6f, 0.4f };
-    int i;
-
-    for(i = 0; i < NUM_BOXES; i++)
-        box(box_pos(i, t), h, t + i, colors);
-}
-
-/* The shadows: the ground footprint of each box, pushed away from the
-   light, projected to the screen and drawn at a constant near depth. */
-static void shadows(float t) {
+/* The wall right in front of the camera (at z = 1), and the floor */
+static void room(void) {
     int i, j;
 
-    pvr_prim(&hdr_tr, sizeof(hdr_tr));
+    pvr_prim(&hdr_op, sizeof(hdr_op));
 
-    for(i = 0; i < NUM_BOXES; i++) {
-        vec3_t p = box_pos(i, t);
-        float a = t + i, co = cosf(a), si = sinf(a);
-        static const float corner[4][2] = { { -1, -1 }, { 1, -1 }, { 1, 1 }, { -1, 1 } };
-        static const int order[4] = { 0, 1, 3, 2 };
+    for(i = -6; i < 6; i++) {
+        for(j = -3; j < 4; j++) {
+            vec3_t a = { i * 0.5f, j * 0.5f, 1.0f }, b = { i * 0.5f, j * 0.5f + 0.5f, 1.0f },
+                   c = { i * 0.5f + 0.5f, j * 0.5f + 0.5f, 1.0f },
+                   d = { i * 0.5f + 0.5f, j * 0.5f, 1.0f };
 
-        for(j = 0; j < 4; j++) {
-            float x = corner[order[j]][0] * 0.9f, z = corner[order[j]][1] * 0.6f;
-            vec3_t g = { p.x + x * co - z * si + 0.6f, 0.0f,
-                         p.z + x * si + z * co + 0.4f };
-            pvr_vertex_t v __attribute__((aligned(32)));
-
-            v.flags = j == 3 ? PVR_CMD_VERTEX_EOL : PVR_CMD_VERTEX;
-            project_cam(to_camera(g), &v.x, &v.y, &v.z);
-            v.z = 10.0f;    /* Deliberately too near */
-            v.u = v.v = 0.0f;
-            v.argb = 0x90000000;
-            v.oargb = 0;
-            pvr_prim(&v, sizeof(v));
+            quad3(a, b, c, d, ((i + j) & 1) ? 0xff806040 : 0xffa08060);
         }
+    }
+
+    {
+        vec3_t a = { -3, -1.5f, 0.2f }, b = { -3, -1.5f, 1.0f },
+               c = { 3, -1.5f, 1.0f }, d = { 3, -1.5f, 0.2f };
+
+        quad3(a, b, c, d, 0xff404040);
     }
 }
 
-static void do_frame(int mode, float t) {
+/* A translucent poster on the wall */
+static void poster(void) {
+    vec3_t a = { -0.9f, -0.2f, 0.98f }, b = { -0.9f, 0.6f, 0.98f },
+           c = { 0.1f, 0.6f, 0.98f }, d = { 0.1f, -0.2f, 0.98f };
+
+    pvr_prim(&hdr_tr, sizeof(hdr_tr));
+    quad3(a, b, c, d, 0x8020c0ff);
+}
+
+/* The depth reset polygon, covering the whole screen at the farthest depth */
+static void depth_reset(void) {
+    pvr_prim(&hdr_reset, sizeof(hdr_reset));
+    rect(0, 0, 640, 480, 0.00001f, 0x00000000);
+}
+
+/* The held object: a long box from 0.5 to 2.2 in front of the camera,
+   bobbing a little */
+static void held_object(float t) {
+    static const uint32_t colors[6] = {
+        0xff303030, 0xffc0c0c0, 0xff909090, 0xff707070, 0xffa0a0a0, 0xff606060
+    };
+    vec3_t c = { 0.42f, -0.35f + 0.03f * sinf(t * 2.0f), 1.35f };
+    vec3_t h = { 0.08f, 0.08f, 0.85f };
+
+    pvr_prim(&hdr_op, sizeof(hdr_op));
+    box(c, h, 0.15f + 0.05f * sinf(t), colors);
+}
+
+static void do_frame(int two_groups, float t) {
     pvr_wait_ready();
     pvr_scene_begin();
 
-    switch(mode) {
-        case 0:     /* One pass, boxes opaque */
-            pvr_list_begin(PVR_LIST_OP_POLY);
-            ground();
-            pvr_prim(&hdr_op, sizeof(hdr_op));
-            boxes(t);
-            pvr_list_begin(PVR_LIST_TR_POLY);
-            shadows(t);
-            draw_text();
-            break;
+    if(two_groups) {
+        /* Group 0: the room, then reset the depth */
+        pvr_list_begin(PVR_LIST_OP_POLY);
+        room();
+        pvr_list_begin(PVR_LIST_TR_POLY);
+        poster();
+        depth_reset();
 
-        case 1:     /* One pass, presorted translucent list */
-            pvr_list_begin(PVR_LIST_OP_POLY);
-            ground();
-            pvr_list_begin(PVR_LIST_TR_POLY);
-            shadows(t);
-            pvr_prim(&hdr_tr_box, sizeof(hdr_tr_box));
-            boxes(t);
-            draw_text();
-            break;
-
-        case 2:     /* Two passes, pass 0 presorted or autosorted */
-        case 3:
-            pvr_list_begin(PVR_LIST_OP_POLY);
-            ground();
-            pvr_list_begin(PVR_LIST_TR_POLY);
-            shadows(t);
-
-            pvr_scene_next_pass();
-
-            pvr_list_begin(PVR_LIST_OP_POLY);
-            pvr_prim(&hdr_op, sizeof(hdr_op));
-            boxes(t);
-            pvr_list_begin(PVR_LIST_TR_POLY);
-            draw_text();
-            break;
+        /* Group 1: the held object, and the text */
+        pvr_list_continue();
+        pvr_list_begin(PVR_LIST_OP_POLY);
+        held_object(t);
+        pvr_list_begin(PVR_LIST_TR_POLY);
+        draw_text();
+    }
+    else {
+        pvr_list_begin(PVR_LIST_OP_POLY);
+        room();
+        held_object(t);
+        pvr_list_begin(PVR_LIST_TR_POLY);
+        poster();
+        draw_text();
     }
 
     pvr_scene_finish();
@@ -364,16 +357,9 @@ static void do_frame(int mode, float t) {
 
 /**** Main *********************************************************/
 
-static const char *mode_names[4] = {
-    "1 pass, boxes OP: shadows on top",
-    "1 pass, boxes in presorted TR",
-    "2 passes, boxes in pass-1 OP",
-    "2 passes, pass 0 autosorted",
-};
-
 int main(int argc, char *argv[]) {
     uint32_t pressed;
-    int mode = 2, autocycle = 1, frame = 0, presort = -1;
+    int two_groups = 1, autocycle = 1, frame = 0;
     uint64_t next_switch = timer_ms_gettime64() + 5000;
     float t = 0.0f;
     char l1[64], l2[64];
@@ -381,10 +367,10 @@ int main(int argc, char *argv[]) {
     (void)argc;
     (void)argv;
 
-    printf("multipass_decal: A = mode, Y = FSAA, Start = exit\n");
+    printf("listcont_viewmodel: A = 1/2 groups, Y = FSAA, Start = exit\n");
 
-    cam.x = 0.0f; cam.y = 6.0f; cam.z = -11.0f;
-    cam_pitch = 0.5f;
+    /* The camera is at the origin, looking down +z: world space is camera
+       space. */
 
     for(;;) {
         pressed = buttons_pressed();
@@ -393,44 +379,37 @@ int main(int argc, char *argv[]) {
             break;
 
         if(pressed & CONT_A) {
-            mode = (mode + 1) % 4;
+            two_groups = !two_groups;
             autocycle = 0;
         }
 
-        if(pressed & CONT_Y) {
+        if(pressed & CONT_Y)
             fsaa = !fsaa;
-            presort = -1;
-        }
 
         if(autocycle && timer_ms_gettime64() >= next_switch) {
-            mode = (mode + 1) % 4;
+            two_groups = !two_groups;
             next_switch = timer_ms_gettime64() + 5000;
         }
 
-        if(setup(mode >= 2 ? 2 : 1))
-            presort = -1;
-
-        /* Set the sort mode once the previous scene has started rendering,
-           so that it applies to the next scene. It is kept until changed.
-           Mode 2 presorts the boxes' list; mode 3 presorts pass 0, the
-           shadows' list. */
-        if(presort != (mode == 1 || mode == 2)) {
-            pvr_wait_ready();
-            presort = mode == 1 || mode == 2;
-            pvr_set_presort_mode(presort);
-        }
+        /* Group 0's translucent list must be presorted, so that the depth
+           reset comes after the poster. The setting is kept until changed,
+           and pvr_init() resets it. */
+        if(setup(two_groups ? 2 : 1) && two_groups)
+            pvr_set_group_presort(0, true);
 
         if((frame++ % 30) == 0 || pressed) {
-            snprintf(l1, sizeof(l1), "%d: %s%s", mode + 1, mode_names[mode],
+            snprintf(l1, sizeof(l1), "%s%s",
+                     two_groups ? "2 groups: object after depth reset" :
+                                "1 group: object clips into the wall",
                      fsaa ? ", FSAA" : "");
             text_render_time(l2, sizeof(l2));
             text_set(l1, l2);
 
             if((frame % 60) == 1)
-                printf("multipass_decal: %s; %s\n", l1, l2);
+                printf("listcont_viewmodel: %s; %s\n", l1, l2);
         }
 
-        do_frame(mode, t);
+        do_frame(two_groups, t);
         t += 1.0f / 60.0f;
     }
 

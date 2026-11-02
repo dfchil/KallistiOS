@@ -121,7 +121,7 @@ typedef struct {
     uint32_t  opb_addresses[PVR_OPB_COUNT];        /* Object pointer buffers (of each type) */
     uint32_t  tile_matrix, tile_matrix_size;  /* Tile matrix, size */
     uint32_t  opb_overflow_count;             /* Extra OPB space after opb_size for TA overflow */
-    uint32_t  tile_matrix_key;                /* Settings (pass presort mask) the tile matrix was written with */
+    uint32_t  tile_matrix_key;                /* Settings (group presort mask) the tile matrix was written with */
 } pvr_ta_buffers_t;
 
 // DMA buffers structure: we have two sets of these
@@ -162,12 +162,12 @@ typedef struct {
     uint32_t  lists_closed;             // (1 << idx) for each list which the SH4 has lost interest in
     uint32_t  lists_transferred;        // (1 << idx) for each list which has completely transferred to the TA
     uint32_t  lists_dmaed;              // (1 << idx) for each list which has been DMA'd (DMA mode only)
-    uint8_t   lists_done[PVR_OPB_COUNT];// Done interrupts received for each list in this scene (one per pass)
+    uint8_t   lists_done[PVR_OPB_COUNT];// Done interrupts received for each list in this scene (one per group)
 
-    // Multipass state
-    int       pass_count;               // Render passes per scene (>= 1)
-    int       pass_cur;                 // Pass being submitted
-    uint32_t  pass_presort;             // (1 << pass) for each pass whose TR list is presorted
+    // List continuation state
+    int       group_count;               // List groups per scene (>= 1)
+    int       group_cur;                 // Group being submitted
+    uint32_t  group_presort;             // (1 << group) for each group whose TR list is presorted
 
     semaphore_t         dma_lock;       // Locked if a DMA is in progress (vertex or texture)
     int     ta_checked_ready;           // >0 if the TA has been checked to be ready for the new scene
@@ -271,7 +271,7 @@ void pvr_allocate_buffers(const pvr_init_params_t *params);
 void pvr_init_tile_matrices(void);
 
 /* Rewrite a TA buffer's tile matrix if it doesn't match the current settings
-   (sort mode of each pass). */
+   (sort mode of each group). */
 void pvr_sync_tile_matrix(int which);
 
 /* Region array (tile matrix) writer.
@@ -283,7 +283,7 @@ void pvr_sync_tile_matrix(int which);
    list address with bit 31 set (PVR_RA_LIST_EMPTY) means an empty list.
 
    Tiles are written in column order (x outer, y inner). A tile gets one
-   entry per pass, consecutive and in pass order. */
+   entry per group, consecutive and in group order. */
 
 #define PVR_TILE_MATRIX_HEADER_SIZE 0x48
 
@@ -302,9 +302,9 @@ void pvr_sync_tile_matrix(int which);
 
 #define PVR_RA_LIST_EMPTY   0x80000000
 
-/* One pass of the region array, i.e. one entry per tile. */
-typedef struct pvr_ra_pass {
-    /* Control word flags for this pass's entries: any of PVR_RA_ZKEEP,
+/* One group of the region array, i.e. one entry per tile. */
+typedef struct pvr_ra_group {
+    /* Control word flags for this group's entries: any of PVR_RA_ZKEEP,
        PVR_RA_PRESORT and PVR_RA_NO_WRITEOUT. The writer adds the tile
        position, and PVR_RA_LAST on the final entry of the array. */
     uint32_t    flags;
@@ -313,38 +313,38 @@ typedef struct pvr_ra_pass {
        tile 0 for each list, or PVR_RA_LIST_EMPTY. Tile n's block is at
        opb[list] + bin_size[list] * n, n = tw * y + x. */
     uint32_t    opb[PVR_OPB_COUNT];
-} pvr_ra_pass_t;
+} pvr_ra_group_t;
 
 /* Write a full region array at VRAM offset tile_matrix (the address that
    goes into PVR_ISP_TILEMAT_ADDR; the header goes before it): the dummy
-   entry, then pass_count entries per tile of a tw x th grid, entry p taking
-   its flags and list bases from passes[p]. bin_size[list] is the first-block
+   entry, then group_count entries per tile of a tw x th grid, entry p taking
+   its flags and list bases from groups[p]. bin_size[list] is the first-block
    size of each list in bytes. Returns the size in bytes from tile_matrix to
    the end of the array. */
 size_t pvr_ra_write(uint32_t tile_matrix, int tw, int th,
                     const int bin_size[PVR_OPB_COUNT],
-                    const pvr_ra_pass_t *passes, int pass_count);
+                    const pvr_ra_group_t *groups, int group_count);
 
 /* Size in bytes from tile_matrix to the end of such an array. */
-#define PVR_RA_SIZE(tw, th, pass_count) \
-    (4 * PVR_RA_ENTRY_WORDS * (1 + (tw) * (th) * (pass_count)))
+#define PVR_RA_SIZE(tw, th, group_count) \
+    (4 * PVR_RA_ENTRY_WORDS * (1 + (tw) * (th) * (group_count)))
 
-/* Address (32-bit area offset) of the entry of tile (x, y), pass p. */
-#define PVR_RA_ENTRY(tile_matrix, th, pass_count, x, y, p) \
+/* Address (32-bit area offset) of the entry of tile (x, y), group p. */
+#define PVR_RA_ENTRY(tile_matrix, th, group_count, x, y, p) \
     ((tile_matrix) + 4 * PVR_RA_ENTRY_WORDS * \
-     (1 + ((x) * (th) + (y)) * (pass_count) + (p)))
+     (1 + ((x) * (th) + (y)) * (group_count) + (p)))
 
-/* Rewrite the control word of every entry of pass p of an array written by
-   pvr_ra_write() (same tw, th and pass_count), with the given flags. Writes
+/* Rewrite the control word of every entry of group p of an array written by
+   pvr_ra_write() (same tw, th and group_count), with the given flags. Writes
    whole control words without reading VRAM; sets PVR_RA_LAST again on the
    final entry. */
-void pvr_ra_set_flags(uint32_t tile_matrix, int tw, int th, int pass_count,
+void pvr_ra_set_flags(uint32_t tile_matrix, int tw, int th, int group_count,
                       int p, uint32_t flags);
 
-/* Control word flags of pass p in a pass_count-pass scene, presorted or not:
-   PVR_RA_ZKEEP on all passes but the first, PVR_RA_NO_WRITEOUT on all but
+/* Control word flags of group p of group_count, presorted or not:
+   PVR_RA_ZKEEP on all groups but the first, PVR_RA_NO_WRITEOUT on all but
    the last. */
-uint32_t pvr_ra_pass_flags(int p, int pass_count, bool presort);
+uint32_t pvr_ra_group_flags(int p, int group_count, bool presort);
 
 
 /**** pvr_misc.c ******************************************************/

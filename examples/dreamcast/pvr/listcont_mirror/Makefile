@@ -1,10 +1,10 @@
 # KallistiOS ##version##
 #
-# examples/dreamcast/pvr/multipass_mirror/Makefile
+# examples/dreamcast/pvr/listcont_mirror/Makefile
 #
 
-TARGET = multipass_mirror.elf
-OBJS = multipass_mirror.o
+TARGET = listcont_mirror.elf
+OBJS = listcont_mirror.o
 
 all: rm-elf $(TARGET)
 
