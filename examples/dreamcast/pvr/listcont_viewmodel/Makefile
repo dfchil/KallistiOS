@@ -1,10 +1,10 @@
 # KallistiOS ##version##
 #
-# examples/dreamcast/pvr/multipass_viewmodel/Makefile
+# examples/dreamcast/pvr/listcont_viewmodel/Makefile
 #
 
-TARGET = multipass_viewmodel.elf
-OBJS = multipass_viewmodel.o
+TARGET = listcont_viewmodel.elf
+OBJS = listcont_viewmodel.o
 
 all: rm-elf $(TARGET)
 

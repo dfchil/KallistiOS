@@ -1,10 +1,10 @@
 # KallistiOS ##version##
 #
-# examples/dreamcast/pvr/multipass_trdepth/Makefile
+# examples/dreamcast/pvr/listcont_basic/Makefile
 #
 
-TARGET = multipass_trdepth.elf
-OBJS = multipass_trdepth.o
+TARGET = listcont_basic.elf
+OBJS = listcont_basic.o
 
 all: rm-elf $(TARGET)
 
