@@ -56,6 +56,21 @@ int pvr_init(const pvr_init_params_t *params) {
         return -1;
     }
 
+    /* Check the list group count */
+    if(params->list_group_count < 0 ||
+       params->list_group_count > PVR_MAX_LIST_GROUPS) {
+        dbglog(DBG_ERROR, "pvr: list_group_count %d out of range (0 to %d)\n",
+               params->list_group_count, PVR_MAX_LIST_GROUPS);
+        return -1;
+    }
+
+    if(params->list_group_count > 1 && params->dma_enabled) {
+        dbglog(DBG_ERROR, "pvr: list continuation (list_group_count %d) can't "
+               "be used with vertex DMA (dma_enabled)\n",
+               params->list_group_count);
+        return -1;
+    }
+
     /* Clear out video memory */
     vid_empty();
 
@@ -74,11 +89,17 @@ int pvr_init(const pvr_init_params_t *params) {
 
     pvr_state.vbuf_doublebuf = !params->vbuf_doublebuf_disabled;
 
+    /* List groups, and the translucent sort mode of each */
+    pvr_state.group_count = params->list_group_count > 1 ?
+                            params->list_group_count : 1;
+    pvr_state.group_presort = params->autosort_disabled ?
+                             (uint32_t)(BIT(pvr_state.group_count) - 1) : 0;
+
     /* Everything's clear, do the initial buffer pointer setup */
     pvr_allocate_buffers(params);
 
     /* Initialize tile matrices */
-    pvr_init_tile_matrices(!!params->autosort_disabled);
+    pvr_init_tile_matrices();
 
     pvr_state.list_reg_open = PVR_LIST_NONE;
 
