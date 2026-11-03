@@ -347,6 +347,16 @@ void pvr_ra_set_flags(uint32_t tile_matrix, int tw, int th, int group_count,
 uint32_t pvr_ra_group_flags(int p, int group_count, bool presort);
 
 
+/* Hardware test hooks of the list continuation code (pvr_scene.c). Not part
+   of the API: examples/dreamcast/pvr/listcont_hwtest sets them to answer
+   open questions about the hardware. */
+extern volatile uint32_t pvr_lc_test_flags;
+#define PVR_LC_TEST_NO_WAIT             BIT(0)  /* Don't wait for a group's list-done IRQs before TA_LIST_CONT */
+#define PVR_LC_TEST_NO_OL_BASE          BIT(1)  /* Don't move TA_OL_BASE to the next group's first OPBs */
+#define PVR_LC_TEST_LAST_NO_WRITEOUT    BIT(2)  /* Set PVR_RA_NO_WRITEOUT on the last group too */
+#define PVR_LC_TEST_ALL_WRITEOUT        BIT(3)  /* Clear PVR_RA_NO_WRITEOUT on every group */
+
+
 /**** pvr_misc.c ******************************************************/
 
 /* What event is happening (for pvr_sync_stats)? */

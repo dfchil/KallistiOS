@@ -108,6 +108,7 @@ This page serves as an index for all KallistiOS examples.
   - fb_tex
   - listcont_basic
   - listcont_decal
+  - listcont_hwtest
   - listcont_mirror
   - listcont_sortmix
   - listcont_trdepth

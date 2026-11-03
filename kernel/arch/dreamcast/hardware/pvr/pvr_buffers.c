@@ -138,13 +138,27 @@ void pvr_ra_set_flags(uint32_t tile_matrix, int tw, int th, int group_count,
 
 /* Control word flags of group p, as currently configured in pvr_state. */
 static uint32_t pvr_group_flags(int p) {
-    return pvr_ra_group_flags(p, pvr_state.group_count,
-                             !!(pvr_state.group_presort & BIT(p)));
+    uint32_t flags = pvr_ra_group_flags(p, pvr_state.group_count,
+                                       !!(pvr_state.group_presort & BIT(p)));
+
+    /* Hardware test hook: keep the tile on chip after the last group too. */
+    if((pvr_lc_test_flags & PVR_LC_TEST_LAST_NO_WRITEOUT)
+       && p == pvr_state.group_count - 1)
+        flags |= PVR_RA_NO_WRITEOUT;
+
+    /* Hardware test hook: write the tile out after every group. */
+    if(pvr_lc_test_flags & PVR_LC_TEST_ALL_WRITEOUT)
+        flags &= ~PVR_RA_NO_WRITEOUT;
+
+    return flags;
 }
 
 /* What a tile matrix's contents depend on, apart from the buffer layout. */
 static uint32_t pvr_tile_matrix_key(void) {
-    return pvr_state.group_presort;
+    return pvr_state.group_presort
+           | ((pvr_lc_test_flags & PVR_LC_TEST_LAST_NO_WRITEOUT) ? BIT(31) : 0)
+           | ((pvr_lc_test_flags & PVR_LC_TEST_NO_OL_BASE) ? BIT(30) : 0)
+           | ((pvr_lc_test_flags & PVR_LC_TEST_ALL_WRITEOUT) ? BIT(29) : 0);
 }
 
 /* Fill Tile Matrix buffers. This function takes a base address and sets up
@@ -169,6 +183,11 @@ static void pvr_init_tile_matrix(int which) {
         for(i = 0; i < PVR_OPB_COUNT; i++)
             groups[p].opb[i] = LIST_ENABLED(i) ?
                 buf->opb_addresses[i] + buf->opb_size * p : PVR_RA_LIST_EMPTY;
+
+        /* Hardware test hook: every group uses group 0's first OPBs. */
+        if(pvr_lc_test_flags & PVR_LC_TEST_NO_OL_BASE)
+            for(i = 0; i < PVR_OPB_COUNT; i++)
+                groups[p].opb[i] = groups[0].opb[i];
     }
 
     pvr_ra_write(buf->tile_matrix, pvr_state.tw, pvr_state.th, bin_size,
@@ -189,6 +208,12 @@ void pvr_init_tile_matrices(void) {
 static void pvr_write_tile_matrix_flags(int which) {
     volatile pvr_ta_buffers_t *buf = pvr_state.ta_buffers + which;
     int p;
+
+    /* The test hook that changes list pointers needs a full rewrite. */
+    if((buf->tile_matrix_key ^ pvr_tile_matrix_key()) & BIT(30)) {
+        pvr_init_tile_matrix(which);
+        return;
+    }
 
     for(p = 0; p < pvr_state.group_count; p++)
         pvr_ra_set_flags(buf->tile_matrix, pvr_state.tw, pvr_state.th,
