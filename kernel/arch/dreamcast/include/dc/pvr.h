@@ -1440,6 +1440,7 @@ pvr_ptr_t pvr_get_back_buffer(void);
 #include "pvr/pvr_regs.h"
 #include "pvr/pvr2.h"
 #include "pvr/pvr_misc.h"
+#include "pvr/pvr_region.h"
 #include "pvr/pvr_dma.h"
 #include "pvr/pvr_fog.h"
 #include "pvr/pvr_pal.h"

@@ -106,9 +106,6 @@ static void pvr_start_ta_rendering(void) {
         if(!pvr_state.vbuf_doublebuf)
             pvr_wait_render_done();
 
-        // Bring the tile matrix's sort modes up to date.
-        pvr_sync_tile_matrix(pvr_state.ta_target);
-
         pvr_state.ta_checked_ready = 1;
         pvr_state.curr_to_texture = pvr_state.next_to_texture;
         pvr_state.to_txr_rp = pvr_state.next_to_txr_rp;
@@ -116,6 +113,10 @@ static void pvr_start_ta_rendering(void) {
         pvr_state.to_txr_h = pvr_state.next_to_txr_h;
         pvr_state.to_txr_stride_px = pvr_state.next_to_txr_stride_px;
         pvr_state.to_txr_addr = pvr_state.next_to_txr_addr;
+
+        // No render reads this TA buffer's tile matrix now, so bring it up
+        // to date with the per-tile state.
+        pvr_update_tile_matrix();
 
         // Starting from that point, we consider that the Tile Accelerator
         // might be busy.

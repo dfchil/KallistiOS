@@ -133,16 +133,20 @@ int pvr_set_vertical_scale(float factor);
     \ingroup pvr_scene_mgmt
 
     This function sets the translucent polygon sort mode for the next frame of
-    output, potentially switching between autosort and presort mode.
+    output, potentially switching between autosort and presort mode. It sets
+    every tile of the screen in every list group; see \ref pvr_region to set
+    the mode per tile.
 
     For most programs, you'll probably want to set this at initialization time
     (with the autosort_disabled field in the pvr_init_params_t structure) and
-    not mess with it per-frame. It is recommended that if you do use this
-    function to change the mode that you should set it each frame to ensure that
-    the mode is set properly.
+    not mess with it per-frame. The mode stays set until it is changed again.
+    If a scene is being registered, the new mode applies to it too. Calling
+    this with the mode already set costs nothing.
 
     \param  presort         Set to true to set the presort mode for translucent
                             polygons, set to false to use autosort mode.
+
+    \sa pvr_set_rect_presort(), pvr_set_tile_presort()
 */
 void pvr_set_presort_mode(bool presort);
 
@@ -152,8 +156,9 @@ void pvr_set_presort_mode(bool presort);
     With several list groups (see pvr_init_params_t::list_group_count), each
     group sorts its translucent list on its own: autosorted per pixel, or
     presorted (drawn in submission order). This function sets the mode of
-    one group; pvr_set_presort_mode() sets every group. The initial mode of
-    every group comes from pvr_init_params_t::autosort_disabled.
+    every tile of one group; pvr_set_presort_mode() sets every group, and
+    \ref pvr_region sets single tiles. The initial mode of every group comes
+    from pvr_init_params_t::autosort_disabled.
 
     The setting is kept for later frames, until changed again. Called while a
     scene is being submitted, it applies to that scene.
@@ -162,7 +167,8 @@ void pvr_set_presort_mode(bool presort);
     \param  presort         True for presort mode, false for autosort mode.
 
     \retval 0               On success.
-    \retval -1              If group is out of range.
+    \retval -1              If group is out of range or the PVR is not
+                            initialized.
 */
 int pvr_set_group_presort(int group, bool presort);
 
