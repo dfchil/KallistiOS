@@ -345,6 +345,9 @@ static int pvr_group_wait(int group) {
     return 0;
 }
 
+/* Hardware test hooks, see pvr_internal.h */
+volatile uint32_t pvr_lc_test_flags;
+
 /* Move the TA on to the next group after a closed one: TA list
    continuation. */
 static void pvr_ta_continue(void) {
@@ -354,14 +357,17 @@ static void pvr_ta_continue(void) {
     /* Let the TA finish the lists of the closed group first. On hardware,
        writing TA_LIST_CONT while the TA was still binning gave the same
        picture, but the wait is short and keeps it safe. */
-    pvr_group_wait(pvr_state.group_cur);
+    if(!(pvr_lc_test_flags & PVR_LC_TEST_NO_WAIT))
+        pvr_group_wait(pvr_state.group_cur);
 
     /* The next group's object lists start in that group's first OPBs, which
        its region array entries point to (without this, the TA overwrites
        the previous group's first OPBs); then restart list input. Overflow
        OPBs keep being allocated from where the earlier groups left off. */
     buf = pvr_state.ta_buffers + pvr_state.ta_target;
-    PVR_SET(PVR_TA_OPB_START, buf->opb + buf->opb_size * group);
+
+    if(!(pvr_lc_test_flags & PVR_LC_TEST_NO_OL_BASE))
+        PVR_SET(PVR_TA_OPB_START, buf->opb + buf->opb_size * group);
 
     PVR_SET(PVR_TA_LIST_CONT, BIT(31));
     (void)PVR_GET(PVR_TA_LIST_CONT);
