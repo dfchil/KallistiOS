@@ -740,9 +740,9 @@ typedef struct {
         opb_sizes above times the tile count, or the group's own sizes, see
         list_groups) per TA buffer, plus 24 bytes of region array per tile.
 
-        With vertex DMA (dma_enabled), every list a group uses must have a
-        vertex buffer (pvr_set_vertbuf()): lists submitted directly can't be
-        mixed with DMA lists in a scene with several groups.
+        With vertex DMA (dma_enabled), lists with a vertex buffer and lists
+        submitted directly can be mixed in a scene with several groups; see
+        \ref pvr_list_cont.
     */
     int     list_group_count;
 
@@ -1122,12 +1122,18 @@ int pvr_list_prim(pvr_list_t list, const void *data, size_t size);
     Like the first list submitted directly, this waits until the TA is done
     with the previous scene (pvr_wait_ready()). An open list is closed first.
 
+    With list groups (\ref pvr_list_cont), this sends the list's part of the
+    current group, after sending the earlier groups if the TA isn't there
+    yet. The list can't be opened again in the current group, but can in the
+    next.
+
     \param  list            The list to flush.
 
     \retval 0               On success.
-    \retval -1              If vertex DMA is off, the list is not enabled or
-                            has no vertex buffer, it was already flushed in
-                            this scene, or the DMA failed.
+    \retval -1              If vertex DMA is off, the list is not enabled,
+                            has no vertex buffer or no bins in the current
+                            group, it was already flushed in this scene (or
+                            group), or the DMA failed.
 */
 int pvr_list_flush(pvr_list_t list);
 
@@ -1194,8 +1200,20 @@ int pvr_scene_finish(void);
     With vertex DMA, pvr_list_continue() only marks where each list's group
     ends in its vertex buffer. pvr_scene_finish() then hands the scene to the
     DMA, which sends the groups one after the other, and the TA moves on to
-    the next group from the interrupt that ends the previous one. Every list
-    used in a group must have a vertex buffer.
+    the next group from the interrupt that ends the previous one. A list
+    without a vertex buffer gets a blank list in each group that has it.
+
+    Lists submitted directly and pvr_list_flush() can be mixed with this.
+    The TA has to take the groups in order, so from the first list that goes
+    to the TA during the scene, submitted directly or flushed, the TA follows
+    the program. First the groups before the current one go to the TA, by DMA,
+    and the TA moves on to the current group. From then on,
+    pvr_list_continue() and pvr_scene_finish() send each group's buffered
+    lists that weren't flushed by DMA, give blank lists to the direct lists
+    that weren't submitted, and move the TA on. All these DMAs wait until
+    they are done, so the groups from that point on cost the CPU their DMA
+    time. The groups before it are sent at once when the TA starts
+    following.
 
     How it works: the region array (tile matrix) holds list_group_count
     consecutive entries per tile. Bit 30 of an entry's control word keeps
@@ -1237,12 +1255,14 @@ int pvr_scene_finish(void);
     next group has bins for can be opened again.
 
     With vertex DMA, the TA moves on later, when the DMA sends the scene;
-    this call just ends the group in each list's vertex buffer.
+    this call just ends the group in each list's vertex buffer. Once a list
+    went to the TA during the scene (submitted directly or flushed), this
+    call sends the group's buffered lists that weren't flushed by DMA and
+    moves the TA on, as without vertex DMA.
 
     \retval 0               On success.
     \retval -1              If the scene is already in its last group, or
-                            if, with vertex DMA, a list of the group has no
-                            vertex buffer.
+                            a DMA failed.
 
     \sa pvr_init_params_t::list_group_count
 */

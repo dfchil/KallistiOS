@@ -178,6 +178,7 @@ typedef struct {
     uint8_t   lists_done_target[PVR_OPB_COUNT];      // Done interrupts expected per scene for each list (groups using it)
     int       dma_group;                 // Group being DMAed (DMA mode)
     int       dma_group_fed;             // >0 once the DMA has sent all of dma_group
+    int       ta_live;                   // With vertex DMA and list groups: the TA follows the program in this scene
 
     semaphore_t         dma_lock;       // Locked if a DMA is in progress (vertex or texture)
     int     ta_checked_ready;           // >0 if the TA has been checked to be ready for the new scene
@@ -409,6 +410,10 @@ void pvr_blank_polyhdr(int type);
 
 /* Same as above, but generates into a buffer instead of submitting. */
 void pvr_blank_polyhdr_buf(int type, pvr_poly_hdr_t * buf);
+
+/* A blank list of the given type for the DMA (64 bytes: a blank header and
+   the end marker) */
+void *pvr_blank_list(pvr_list_t list);
 
 
 /**** pvr_irq.c *******************************************************/

@@ -132,6 +132,7 @@ void pvr_scene_begin(void) {
     pvr_state.ta_checked_ready = 0;
     pvr_state.lists_closed = 0;
     pvr_state.group_cur = 0;
+    pvr_state.ta_live = 0;
 
     // Get general stuff ready.
     pvr_state.list_reg_open = PVR_LIST_NONE;
@@ -181,6 +182,8 @@ int pvr_scene_begin_rtt(pvr_ptr_t txr, uint32_t render_w,
 
 static bool pvr_list_dma;
 
+static int pvr_dma_go_live(void);
+
 inline static bool pvr_list_uses_dma(pvr_list_t list) {
     return pvr_state.dma_mode &&
            pvr_state.dma_buffers[pvr_state.ram_target].base[list];
@@ -197,28 +200,28 @@ int pvr_list_begin(pvr_list_t list) {
         return -1;
     }
 
-    if(pvr_state.group_count > 1) {
-        /* The list must have bins in the current group */
-        if(!(pvr_state.group_lists[pvr_state.group_cur] & BIT(list))) {
-            dbglog(DBG_WARNING, "pvr_list_begin: list %d has no bins in "
-                   "list group %d\n", list, pvr_state.group_cur);
-            return -1;
-        }
-
-        /* With DMA, the groups go to the TA one after the other when the
-           scene is finished: no list can go to the TA directly before. */
-        if(pvr_state.dma_mode &&
-           !pvr_state.dma_buffers[pvr_state.ram_target].base[list]) {
-            dbglog(DBG_WARNING, "pvr_list_begin: list %d has no vertex "
-                   "buffer (needed with vertex DMA and list groups)\n", list);
-            return -1;
-        }
+    /* The list must have bins in the current group */
+    if(pvr_state.group_count > 1 &&
+       !(pvr_state.group_lists[pvr_state.group_cur] & BIT(list))) {
+        dbglog(DBG_WARNING, "pvr_list_begin: list %d has no bins in "
+               "list group %d\n", list, pvr_state.group_cur);
+        return -1;
     }
 
-    /* A list sent by pvr_list_flush() is done for this scene */
+    /* A list sent by pvr_list_flush() is done for this scene (with list
+       groups, for this group) */
     if(pvr_state.dma_mode &&
        (pvr_state.dma_buffers[pvr_state.ram_target].flushed & BIT(list))) {
         dbglog(DBG_WARNING, "pvr_list_begin: attempt to open flushed list\n");
+        return -1;
+    }
+
+    /* Once the TA follows the program, a direct list can't go to it twice
+       in a group */
+    if(pvr_state.ta_live && !pvr_list_uses_dma(list) &&
+       (pvr_state.lists_closed & BIT(list))) {
+        dbglog(DBG_WARNING, "pvr_list_begin: attempt to open already closed "
+               "list\n");
         return -1;
     }
 
@@ -227,6 +230,12 @@ int pvr_list_begin(pvr_list_t list) {
         pvr_list_finish();
 
     pvr_list_dma = pvr_list_uses_dma(list);
+
+    /* With vertex DMA and list groups, a direct list needs the TA to be at
+       the current group */
+    if(!pvr_list_dma && pvr_state.dma_mode && pvr_state.group_count > 1 &&
+       pvr_dma_go_live() < 0)
+        return -1;
 
     if(!pvr_list_dma) {
         pvr_start_ta_rendering();
@@ -321,11 +330,12 @@ int pvr_list_prim(pvr_list_t list, const void *data, size_t size) {
     return 0;
 }
 
-/* Terminate a list's DMA buffer: a blank header if it is empty, then the
-   zero marker that ends the list. */
-static void pvr_list_terminate(volatile pvr_dma_buffers_t *b, pvr_list_t list) {
-    if(b->ptr[list] == 0) {
-        pvr_blank_polyhdr_buf(list, (pvr_poly_hdr_t *)(b->base[list]));
+/* Terminate a list's data in its DMA buffer, from start: a blank header if
+   it is empty, then the zero marker that ends the list. */
+static void pvr_list_terminate(volatile pvr_dma_buffers_t *b, pvr_list_t list,
+                               uint32_t start) {
+    if(b->ptr[list] == start) {
+        pvr_blank_polyhdr_buf(list, (pvr_poly_hdr_t *)(b->base[list] + start));
         b->ptr[list] += 32;
     }
 
@@ -335,8 +345,84 @@ static void pvr_list_terminate(volatile pvr_dma_buffers_t *b, pvr_list_t list) {
     assert(b->ptr[list] <= b->size[list]);
 }
 
+/* A blank list of the given type, for the DMA: a blank header and the end
+   marker. */
+void *pvr_blank_list(pvr_list_t list) {
+    static uint8_t blank[PVR_OPB_COUNT][64] __attribute__((aligned(32)));
+
+    pvr_blank_polyhdr_buf(list, (pvr_poly_hdr_t *)blank[list]);
+    memset(blank[list] + 32, 0, 32);
+
+    return blank[list];
+}
+
+/* Where the current group's data starts in a list's vertex buffer */
+static uint32_t pvr_group_start(volatile pvr_dma_buffers_t *b, int list) {
+    int group = pvr_state.group_cur;
+
+    return group ? b->group_end[group - 1][list] : 0;
+}
+
+/* DMA to the TA, returning once the DMA is done */
+static int pvr_dma_send(const void *src, size_t count) {
+    int rv;
+
+    sem_wait((semaphore_t *)&pvr_state.dma_lock);
+    rv = pvr_dma_load_ta(src, count, true, NULL, NULL);
+    sem_signal((semaphore_t *)&pvr_state.dma_lock);
+
+    return rv;
+}
+
+static int pvr_group_wait(int group);
+
+/* With vertex DMA and list groups, the groups normally go to the TA after
+   pvr_scene_finish(). From the first list that goes to the TA during the
+   scene (submitted directly or flushed), the TA follows the program
+   instead: the groups before the current one are sent now, by DMA, each
+   list's part of its vertex buffer (a blank list for a list without one),
+   and the TA moves on to the current group. */
+static int pvr_dma_go_live(void) {
+    volatile pvr_dma_buffers_t *b = pvr_state.dma_buffers + pvr_state.ram_target;
+    uint32_t start;
+    int g, i, rv;
+
+    if(pvr_state.ta_live)
+        return 0;
+
+    pvr_start_ta_rendering();
+    pvr_sync_stats(PVR_SYNC_REGSTART);
+
+    for(g = 0; g < pvr_state.group_cur; g++) {
+        for(i = 0; i < PVR_OPB_COUNT; i++) {
+            if(!(pvr_state.group_lists[g] & BIT(i)))
+                continue;
+
+            if(b->base[i]) {
+                start = g ? b->group_end[g - 1][i] : 0;
+                rv = pvr_dma_send(b->base[i] + start, b->group_end[g][i] - start);
+            }
+            else
+                rv = pvr_dma_send(pvr_blank_list(i), 64);
+
+            if(rv < 0)
+                return -1;
+        }
+
+        if(pvr_group_wait(g) < 0)
+            return -1;
+
+        pvr_ta_continue_group(g + 1);
+    }
+
+    pvr_state.ta_live = 1;
+
+    return 0;
+}
+
 int pvr_list_flush(pvr_list_t list) {
     volatile pvr_dma_buffers_t *b;
+    uint32_t start;
     int rv;
 
     if(list < 0 || list >= PVR_OPB_COUNT || !pvr_state.dma_mode
@@ -360,22 +446,38 @@ int pvr_list_flush(pvr_list_t list) {
         return -1;
     }
 
+    if(pvr_state.group_count > 1 &&
+       !(pvr_state.group_lists[pvr_state.group_cur] & BIT(list))) {
+        dbglog(DBG_WARNING, "pvr_list_flush: list %d has no bins in list "
+               "group %d\n", (int)list, pvr_state.group_cur);
+        return -1;
+    }
+
     /* Close the open list: a direct one must reach the TA in full before
        the DMA starts. */
     if(pvr_state.list_reg_open != PVR_LIST_NONE)
         pvr_list_finish();
 
-    pvr_list_terminate(b, list);
+    /* With list groups, the TA must be at the current group; only the
+       group's part of the buffer is sent. */
+    start = 0;
+
+    if(pvr_state.group_count > 1) {
+        if(pvr_dma_go_live() < 0)
+            return -1;
+
+        start = pvr_group_start(b, list);
+    }
+
+    pvr_list_terminate(b, list, start);
 
     /* The TA must be done with the previous scene, as for a list submitted
        directly. */
     pvr_start_ta_rendering();
 
-    /* The previous scene's DMA chain has ended by now; take the channel all
-       the same, as pvr_start_dma() does. */
-    sem_wait((semaphore_t *)&pvr_state.dma_lock);
-    rv = pvr_dma_load_ta(b->base[list], b->ptr[list], true, NULL, NULL);
-    sem_signal((semaphore_t *)&pvr_state.dma_lock);
+    /* The previous scene's DMA chain has ended by now; pvr_dma_send() takes
+       the channel all the same, as pvr_start_dma() does. */
+    rv = pvr_dma_send(b->base[list] + start, b->ptr[list] - start);
 
     if(rv < 0)
         return -1;
@@ -463,13 +565,8 @@ static int pvr_dma_group_close(void) {
     for(i = 0; i < PVR_OPB_COUNT; i++) {
         start = group ? b->group_end[group - 1][i] : 0;
 
-        if(pvr_state.group_lists[group] & BIT(i)) {
-            if(!b->base[i]) {
-                dbglog(DBG_ERROR, "pvr: list %d of list group %d has no "
-                       "vertex buffer\n", i, group);
-                return -1;
-            }
-
+        /* A list without a vertex buffer gets a blank list from the DMA */
+        if((pvr_state.group_lists[group] & BIT(i)) && b->base[i]) {
             /* Make sure there's at least one primitive in it */
             if(b->ptr[i] == start) {
                 pvr_blank_polyhdr_buf(i, (pvr_poly_hdr_t *)(b->base[i] + b->ptr[i]));
@@ -492,9 +589,56 @@ static int pvr_dma_group_close(void) {
     return 0;
 }
 
+/* With vertex DMA, once the TA follows the program (pvr_dma_go_live()): end
+   the current group at the TA. A buffered list that wasn't flushed goes to
+   the TA now, by DMA (with a blank header if it got nothing), and a direct
+   list that wasn't submitted gets a blank one. */
+static int pvr_live_group_close(void) {
+    volatile pvr_dma_buffers_t *b = pvr_state.dma_buffers + pvr_state.ram_target;
+    int group = pvr_state.group_cur;
+    uint32_t start;
+    int i;
+
+    if(pvr_state.list_reg_open != PVR_LIST_NONE)
+        pvr_list_finish();
+
+    for(i = 0; i < PVR_OPB_COUNT; i++) {
+        if(pvr_state.group_lists[group] & BIT(i)) {
+            if(b->base[i]) {
+                if(!(b->flushed & BIT(i))) {
+                    start = pvr_group_start(b, i);
+                    pvr_list_terminate(b, i, start);
+
+                    if(pvr_dma_send(b->base[i] + start, b->ptr[i] - start) < 0)
+                        return -1;
+                }
+            }
+            else if(!(pvr_state.lists_closed & BIT(i))) {
+                pvr_list_begin(i);
+                pvr_blank_polyhdr(i);
+                pvr_list_finish();
+            }
+        }
+
+        b->group_end[group][i] = b->ptr[i];
+    }
+
+    b->flushed = 0;
+
+    return 0;
+}
+
 int pvr_list_continue(void) {
     if(pvr_state.group_cur >= pvr_state.group_count - 1)
         return -1;
+
+    if(pvr_state.dma_mode && pvr_state.ta_live) {
+        if(pvr_live_group_close() < 0)
+            return -1;
+
+        pvr_ta_continue();
+        return 0;
+    }
 
     if(pvr_state.dma_mode) {
         if(pvr_dma_group_close() < 0)
@@ -522,9 +666,25 @@ int pvr_scene_finish(void) {
     int i, o;
     volatile pvr_dma_buffers_t *b;
 
+    // With vertex DMA and several list groups, once the TA follows the
+    // program: send the rest of the current group, then the groups left,
+    // empty.
+    if(pvr_state.dma_mode && pvr_state.group_count > 1 && pvr_state.ta_live) {
+        if(pvr_live_group_close() < 0)
+            return -1;
+
+        while(pvr_state.group_cur < pvr_state.group_count - 1) {
+            pvr_ta_continue();
+
+            if(pvr_live_group_close() < 0)
+                return -1;
+        }
+
+        pvr_sync_stats(PVR_SYNC_BUFDONE);
+    }
     // With vertex DMA and several list groups: end each group in the vertex
     // buffers, the unused groups empty, and let the DMA send them in order.
-    if(pvr_state.dma_mode && pvr_state.group_count > 1) {
+    else if(pvr_state.dma_mode && pvr_state.group_count > 1) {
         if(pvr_dma_group_close() < 0)
             return -1;
 
@@ -574,7 +734,7 @@ int pvr_scene_finish(void) {
 
             /* Make sure there's at least one primitive in each, and put a
                zero-marker on the end. */
-            pvr_list_terminate(b, i);
+            pvr_list_terminate(b, i, 0);
         }
 
         pvr_start_ta_rendering();

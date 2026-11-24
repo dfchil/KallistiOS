@@ -42,6 +42,13 @@ static void dma_next_group_list(volatile pvr_dma_buffers_t *b, void *thread) {
                 && !(pvr_state.lists_dmaed & BIT(i))) {
             pvr_state.lists_dmaed |= BIT(i);
 
+            /* A list without a vertex buffer gets a blank list */
+            if(!b->base[i]) {
+                pvr_dma_load_ta(pvr_blank_list(i), 64, 0, dma_next_list,
+                                thread);
+                return;
+            }
+
             start = group ? b->group_end[group - 1][i] : 0;
             end = b->group_end[group][i];
 
